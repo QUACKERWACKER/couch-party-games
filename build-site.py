@@ -16,6 +16,7 @@ PAGES = {
     "Ringout": ("build-mode.js card-effects.js cards.js cosmetics.js floor-sprites.svg "
                 "game.js kinetic.js maps.js pickups.svg sprites.svg style.css themes.js ui-sprites.svg"),
 }
+NOINDEX = '<head>\n<meta name="robots" content="noindex">'
 
 
 def build(output, relay):
@@ -24,7 +25,7 @@ def build(output, relay):
         destination = output / folder
         destination.mkdir(parents=True, exist_ok=True)
         html = (ROOT / folder / "index.html").read_text()
-        html = html.replace("<head>", '<head>\n<meta name="robots" content="noindex">', 1)
+        html = html.replace("<head>", NOINDEX, 1)
         if not folder:
             html = html.replace('href="/', 'href="./')
         else:
@@ -42,7 +43,16 @@ def build(output, relay):
     if relay:
         script = (f"const couchJoinstickServer = {json.dumps(relay)};\n"
                   "const couchJoinstickPublicUrl = null;\n"
+                  "const couchJoinstickHostedPhone = true;\n"
                   + (ROOT / "joinstick-host.js").read_text())
+        phone = output / "phone"
+        source = ROOT / "phone-controllers/public/phone"
+        phone.mkdir()
+        html = (source / "index.html").read_text().replace("<head>", NOINDEX, 1)
+        (phone / "index.html").write_text(html)
+        copyfile(source / "pad.css", phone / "pad.css")
+        (phone / "pad.js").write_text(f"const couchPhoneRelay = {json.dumps(relay)};\n"
+                                      + (source / "pad.js").read_text())
     (output / "joinstick-host.js").write_text(script)
     (output / ".nojekyll").touch()
 

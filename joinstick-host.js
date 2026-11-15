@@ -2,6 +2,8 @@
 
 (() => {
   if (typeof couchJoinstickServer === 'undefined') return;
+  const hostedPhone = typeof couchJoinstickHostedPhone !== 'undefined'
+    ? new URL('./phone/', document.currentScript.src) : null;
   const game = document.currentScript.dataset.game;
   const layouts = {
     blitz: {slots: 8, labels: {0: 'A', 1: 'B', 2: 'X', 3: 'Y', 5: 'Team/RB', 9: 'Start'}},
@@ -118,7 +120,7 @@
       const joinUrl = new URL(room.joinUrl());
       // A reverse proxy may terminate TLS before Joinstick sees the request.
       const inviteUrl = drawQr
-        ? new URL('/phone/', relay.protocol === 'https:' ? relay : joinUrl)
+        ? new URL(hostedPhone ?? '/phone/', relay.protocol === 'https:' ? relay : joinUrl)
         : joinUrl;
       if (drawQr) {
         inviteUrl.searchParams.set('g', game);
@@ -168,6 +170,13 @@
     status.textContent = 'Connecting to Joinstick…';
     try {
       const server = couchJoinstickServer;
+      if (hostedPhone) {
+        status.textContent = 'Starting the phone relay. This can take about a minute…';
+        const response = await fetch(server + '/phone/qr.js', {signal: AbortSignal.timeout(90_000)});
+        if (!response.ok || !response.headers.get('content-type')?.includes('javascript')) {
+          throw new Error('The phone relay is starting or unavailable.');
+        }
+      }
       const [{host}, qrModule] = await Promise.all([
         import(server + '/joinstick/host.js'),
         import(server + '/phone/qr.js').catch(() => null),
@@ -207,7 +216,8 @@
       update();
     } catch (error) {
       console.warn('Joinstick could not start:', error);
-      disconnect('Could not start a room. Check that your Joinstick server is running and try again.');
+      disconnect(hostedPhone ? 'Could not start a room. Wait a moment, then try again.'
+        : 'Could not start a room. Check that your Joinstick server is running and try again.');
     }
   });
   window.addEventListener('pagehide', event => {

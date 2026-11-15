@@ -1,5 +1,4 @@
-import {join} from '/joinstick/client.js';
-
+const relay = typeof couchPhoneRelay === 'undefined' ? location.origin : couchPhoneRelay;
 const games = {
   blitz: {
     title: 'Blitz 7', move: 'Move / aim', actions: [
@@ -215,8 +214,9 @@ function updateBlitz(info) {
 
 async function connect() {
   try {
+    const {join} = await import(relay + '/joinstick/client.js');
     const slot = Number(params.get('s')) || undefined;
-    pad = await join({room: code, slot});
+    pad = await join({room: code, slot, server: relay});
     params.set('s', pad.slot);
     history.replaceState(null, '', '?' + params);
     pad.on('status', roomStatus);

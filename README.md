@@ -8,6 +8,8 @@ On macOS, open `Play.command` with Python 3 installed. The games accept keyboard
 
 Enable GitHub Actions as the GitHub Pages publishing source. The workflow builds the games from an explicit list of browser assets. For a local static build, run `python3 build-site.py dist` with a fresh output directory.
 
-To enable phone controllers on the hosted games, set the repository Actions variable `CONTROLLER_RELAY_ORIGIN` to the public HTTPS origin of a running Joinstick relay and rerun the workflow. This is a public address. The relay runs separately from GitHub Pages and needs WebSocket support.
+To enable phone controllers on the hosted games, set the repository Actions variable `CONTROLLER_RELAY_ORIGIN` to the public HTTPS origin of a running Joinstick relay and rerun the workflow. The generated phone page uses the same domain and path prefix as the games. The relay runs separately and needs WebSocket support. The relay address is public.
+
+For a Node hosting service, use `phone-controllers` as the root directory, `npm ci` as the build command, and `npm start` as the start command. The relay respects the service's `PORT` setting.
 
 The generated game pages request that search engines omit them from results. Anyone with the address can open them.
