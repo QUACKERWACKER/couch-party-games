@@ -73,7 +73,7 @@
 
   const open = document.createElement('button');
   open.type = 'button';
-  open.textContent = 'Joinstick phones';
+  open.textContent = 'Phone controllers';
   open.setAttribute('aria-haspopup', 'dialog');
   const header = document.querySelector('header');
   (header.querySelector('.header-tools') || header).append(open);
@@ -93,11 +93,12 @@
       #couch-joinstick-dialog [hidden] { display: none; }
       #couch-joinstick-dialog button { margin: 4px; }
     </style>
-    <h2 id="couch-joinstick-title">Joinstick phones</h2>
-    <p role="status">Start a room to show a phone invite.</p>
+    <h2 id="couch-joinstick-title">Phone controllers</h2>
+    <p role="status">Start a room, then scan the QR code with your phone’s camera.</p>
     <p id="couch-joinstick-invite" hidden>
       <img alt="Scan to open the Joinstick controller" width="192" height="192">
       <a target="_blank" rel="noopener noreferrer">Open phone invite</a>
+      <button type="button" id="couch-joinstick-copy" hidden>Copy invite</button>
     </p>
     <form method="dialog">
       <button type="button" id="couch-joinstick-start" autofocus>Start room</button>
@@ -109,6 +110,7 @@
   const invite = dialog.querySelector('#couch-joinstick-invite');
   const qr = invite.querySelector('img');
   const link = invite.querySelector('a');
+  const copy = invite.querySelector('#couch-joinstick-copy');
   const start = dialog.querySelector('#couch-joinstick-start');
   const stop = dialog.querySelector('#couch-joinstick-stop');
 
@@ -152,11 +154,21 @@
     qr.removeAttribute('src');
     delete qr.dataset.invite;
     link.removeAttribute('href');
+    copy.textContent = 'Copy invite';
     start.hidden = start.disabled = false;
     status.textContent = message;
   }
 
   qr.addEventListener('error', () => { qr.hidden = true; });
+  copy.hidden = !navigator.clipboard?.writeText;
+  copy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(link.href);
+      if (room) copy.textContent = 'Copied';
+    } catch {
+      if (room) copy.textContent = 'Copy unavailable';
+    }
+  });
   open.addEventListener('click', () => dialog.showModal());
   open.addEventListener('keydown', event => event.stopPropagation());
   dialog.addEventListener('keydown', event => event.stopPropagation());
@@ -172,9 +184,19 @@
       const server = couchJoinstickServer;
       if (hostedPhone) {
         status.textContent = 'Starting the phone relay. This can take about a minute…';
-        const response = await fetch(server + '/phone/qr.js', {signal: AbortSignal.timeout(90_000)});
-        if (!response.ok || !response.headers.get('content-type')?.includes('javascript')) {
-          throw new Error('The phone relay is starting or unavailable.');
+        const deadline = Date.now() + 90_000;
+        while (true) {
+          if (Date.now() >= deadline) throw new Error('The phone relay did not start in time.');
+          try {
+            const response = await fetch(server + '/phone/qr.js', {
+              cache: 'no-store', signal: AbortSignal.timeout(Math.min(10_000, deadline - Date.now())),
+            });
+            await response.body?.cancel();
+            if (response.ok && response.headers.get('content-type')?.includes('javascript')) break;
+          } catch {
+            // A sleeping relay may respond without CORS headers while it wakes up.
+          }
+          await new Promise(resolve => setTimeout(resolve, 2500));
         }
       }
       const [{host}, qrModule] = await Promise.all([

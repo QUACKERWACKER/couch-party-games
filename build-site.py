@@ -28,6 +28,9 @@ def build(output, relay):
         html = html.replace("<head>", NOINDEX, 1)
         if not folder:
             html = html.replace('href="/', 'href="./')
+            if relay:
+                html = html.replace("<!-- hosted-phone-help -->",
+                                    " For phones, choose <strong>Phone controllers</strong> in the game and scan the QR code.")
         else:
             parent = "../" * len(Path(folder).parts)
             html = html.replace('src="/joinstick-host.js"', f'src="{parent}joinstick-host.js"')
