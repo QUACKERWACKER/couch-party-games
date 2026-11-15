@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Couch Party Controller</title>
+  <link rel="stylesheet" href="./pad.css">
+  <script type="module" src="./pad.js"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="identity">
+        <h1>Couch Party Controller</h1>
+        <p id="status" role="status">Connecting…</p>
+      </div>
+      <div class="utilities">
+        <span id="player" hidden></span>
+        <button type="button" id="leave" hidden>Disconnect</button>
+      </div>
+    </header>
+    <button type="button" id="retry" hidden>Reconnect</button>
+    <section id="controls" aria-label="Game controls" hidden>
+      <div class="stick-group" id="movement">
+        <div class="stick" data-stick="move" tabindex="0" role="group" aria-labelledby="move-label" aria-describedby="move-keys">
+          <i class="knob" aria-hidden="true"></i>
+        </div>
+        <b id="move-label">Move</b>
+        <span id="move-keys" class="sr-only">Use the arrow keys to move.</span>
+      </div>
+      <div id="actions" aria-label="Actions"></div>
+      <div class="stick-group" id="aim" hidden>
+        <div class="stick" data-stick="aim" tabindex="0" role="group" aria-labelledby="aim-label" aria-describedby="aim-keys">
+          <i class="knob" aria-hidden="true"></i>
+        </div>
+        <b id="aim-label">Aim</b>
+        <span id="aim-keys" class="sr-only">Use the arrow keys to aim while this stick has focus.</span>
+      </div>
+    </section>
+    <p id="hint" hidden></p>
+  </main>
+</body>
+</html>

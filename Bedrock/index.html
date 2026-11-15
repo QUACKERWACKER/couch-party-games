@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Bedrock Rivals</title>
+<link rel="stylesheet" href="style.css">
+<script src="/joinstick-host.js" data-game="bedrock" defer></script>
+<script defer src="game.js"></script>
+</head>
+<body>
+<main>
+  <header><a href="/">← Game launcher</a><span>LOCAL TEAM VERSUS</span></header>
+  <section class="cabinet" aria-label="Bedrock Rivals game">
+    <canvas width="1248" height="700" aria-label="Side-view mining battlefield"></canvas>
+    <section id="overlay" class="overlay">
+      <div class="menu">
+        <p class="eyebrow" id="eyebrow"></p>
+        <h1 id="title">BEDROCK<span>RIVALS</span></h1>
+        <p id="brief"></p>
+        <div id="roster" aria-live="polite"></div>
+        <p id="prompt" aria-live="polite"></p>
+        <small id="hint"></small>
+      </div>
+    </section>
+  </section>
+  <footer aria-label="Controller controls">
+    <span><b>Left stick</b> Move / aim · Up jets</span>
+    <span><kbd>LB / L1</kbd> Manual jet</span>
+    <span><kbd>A / ✕</kbd> Dig</span>
+    <span><kbd>B / ○</kbd> Fire</span>
+    <span><kbd>X / □</kbd> Summon</span>
+    <span><kbd>RB / R1</kbd> Minions · tap or hold + aim</span>
+    <span><kbd>Y / △</kbd> Upgrade</span>
+    <span><kbd>RT / R2</kbd> Upgrades · tap or hold + aim</span>
+  </footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,16 @@
+.DS_Store
+__MACOSX/
+*.zip
+node_modules/
+__pycache__/
+*.py[cod]
+dist/
+.env*
+*.pem
+*.key
+*.p12
+.cloudflared/
+.wrangler/
+.vercel/
+.netlify/
+*.log

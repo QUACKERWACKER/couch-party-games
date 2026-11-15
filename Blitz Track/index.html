@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blitz Track | Couch Party Games</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+<script src="/joinstick-host.js" data-game="track" defer></script>
+<script src="events.js" defer></script>
+<script src="game.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <h1>BLITZ <em>TRACK</em></h1>
+    <div class="header-tools"><button id="sound" aria-pressed="true">Sound</button><a href="../">← Couch Party Games</a></div>
+  </header>
+  <div class="scoreboard" aria-label="Meet score">
+    <div class="team hot"><span>Hot Dogs</span><strong id="score0">00</strong></div>
+    <div class="round"><small id="round">MEET SETUP</small><b id="event-name">TRACK &amp; FIELD</b></div>
+    <div class="team cool"><strong id="score1">00</strong><span>Turbo Toads</span></div>
+  </div>
+  <section class="arena" aria-label="Stadium">
+    <canvas width="960" height="350" aria-label="Arcade stadium and timing meters"></canvas>
+    <div id="call" class="call" aria-hidden="true"></div>
+  </section>
+  <div class="ribbon"><span id="status" role="status">Press A on a controller to join, or play on the keyboard.</span><button id="pause" hidden>Pause</button></div>
+  <section id="setup" class="panel" aria-labelledby="setup-title">
+    <div class="section-head"><h2 id="setup-title">Build your meet</h2><button id="start" class="primary">Start meet</button></div>
+    <div class="lobby">
+      <div>
+        <h3>Teams</h3>
+        <div class="button-row"><button id="keyboard" aria-pressed="true">Keyboard joined</button><button id="switch">Switch team</button></div>
+        <div id="rosters" class="rosters"></div>
+        <p class="help">A joins · RB switches teams · first to join captains the team</p>
+      </div>
+      <div>
+        <h3>Event order</h3>
+        <div class="button-row"><button id="quick">Quick 5</button><button id="full">All events</button><button id="clear">Clear</button></div>
+        <ol id="program"></ol>
+        <p class="help">Claim an event here, or leave it for a captain to assign.</p>
+      </div>
+    </div>
+    <div id="groups" class="groups"></div>
+  </section>
+  <section id="desk" class="panel" aria-labelledby="desk-title" hidden>
+    <div class="section-head"><h2 id="desk-title"></h2><button id="advance" class="primary"></button></div>
+    <p id="briefing"></p>
+    <div id="assignments" class="rosters"></div>
+    <p id="desk-help" class="help"></p>
+    <ol id="results" hidden></ol>
+    <button id="reset" hidden>Back to setup</button>
+  </section>
+  <section class="controls" aria-label="Controls">
+    <div><kbd>J / A</kbd><b>Stride / meter</b></div>
+    <div><kbd>K / B</kbd><b>Hold turbo</b></div>
+    <div><kbd>I / Y</kbd><b>Jump / pass / grab</b></div>
+    <div><kbd>L / X</kbd><b>Dirty trick</b></div>
+  </section>
+  <div id="touch" class="touch" aria-label="On-screen controls">
+    <button data-key="j">Stride / meter</button><button data-key="k">Turbo</button>
+    <button data-key="i">Jump / pass</button><button data-key="l">Trick</button>
+  </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,29 @@
+:root{color-scheme:dark;font-family:"Geist",system-ui,sans-serif;background:#0b0e17;color:#fff0d5}
+*{box-sizing:border-box}
+body{margin:0;min-height:100dvh;display:grid;place-items:center;background:radial-gradient(ellipse at 50% 15%,#242039,transparent 75%),#0b0e17}
+main{width:min(96vw,calc((100dvh - 100px)*1.91),1600px)}
+header,footer{display:flex;align-items:center;justify-content:space-between;gap:.65rem;padding:.85rem .15rem;color:#c4b8cb;font-size:clamp(.72rem,1.05vw,1rem)}
+header span,.eyebrow{font-weight:800;letter-spacing:.18em}
+a{color:inherit;text-underline-offset:.22em}
+a:focus-visible{outline:2px solid #f6bd71;outline-offset:5px}
+.cabinet{position:relative;isolation:isolate;border:1px solid #645065;box-shadow:0 20px 80px #0009;border-radius:12px;overflow:hidden;container-type:inline-size;background:#151321}
+canvas{width:100%;height:auto;display:block}
+.overlay{position:absolute;inset:0;display:grid;place-items:center;background:radial-gradient(ellipse,#130f1cef 24%,#15101bb0 56%,#15101b33 95%)}
+[hidden]{display:none!important}
+.menu{text-align:center;padding:1.5cqw;margin:auto;font-size:1.6cqw;line-height:1.4}
+.eyebrow{color:#6cf2d8;margin:0 0 1cqw;font-size:1.05cqw}
+h1{font-family:"Archivo Black","Arial Black",system-ui,sans-serif;font-weight:950;font-size:10cqw;letter-spacing:-.085em;line-height:.78;margin:0;color:#fff0d5;text-shadow:0 .45cqw #9c514c,0 .85cqw #2e1729}
+h1 span{display:block;color:#ffab66;font-size:.79em;margin-top:.85cqw;letter-spacing:.03em}
+#brief{margin:2.1cqw 0 1cqw;color:#e8d8df}
+#roster{display:flex;justify-content:center;gap:.45cqw;flex-wrap:wrap;max-width:65cqw;margin:auto;min-height:2.4cqw}
+#roster span{border:1px solid currentColor;border-radius:4px;padding:.25cqw .65cqw;font-weight:750;font-size:1.12cqw;background:#171421}
+#prompt{display:inline-block;margin:.9cqw 0 .45cqw;border-radius:5px;padding:.5cqw 1.4cqw;background:#f9bf77;color:#251821;font-weight:850}
+small{display:block;color:#c4b8cb;font-size:1.05cqw}
+footer{justify-content:center;flex-wrap:wrap;column-gap:1.5rem}
+footer b,kbd{color:#fff0d5;font-weight:800}
+kbd{font:inherit;font-weight:800;border:1px solid #62566d;border-radius:4px;padding:.05rem .32rem;margin-right:.2rem}
+@media(max-width:650px) and (orientation:portrait){main{width:98vw}footer{justify-content:flex-start}header,footer{padding-inline:.45rem}}
+main{width:min(96vw,calc((100dvh - 117px)*1.78),1600px)}
+footer{row-gap:.45rem;column-gap:1rem}
+#hint{max-width:72cqw}
+@media(max-width:650px) and (orientation:portrait){main{width:98vw}}

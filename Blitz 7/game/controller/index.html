@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111a1c">
+<title>Blitz 7 · QR Controller</title>
+<link rel="stylesheet" href="pad.css">
+<script src="pad.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div><h1>BLITZ <em>7</em></h1><small>QR CONTROLLER</small></div>
+    <div id="connection"><strong id="player">OFFLINE</strong><small id="status" role="status">Join the game on your TV</small></div>
+  </header>
+  <section id="join"><button id="connect">Join Blitz 7</button></section>
+  <section id="controls" hidden aria-label="Game controller">
+    <div class="toolbar">
+      <button type="button" data-bit="4" id="team">R1 <span>Team / CPU</span></button>
+      <button type="button" data-bit="5" id="start">START <span>P1</span></button>
+    </div>
+    <div class="pad">
+      <div class="stick" id="stick" aria-label="Movement and aiming">
+        <div class="ring"><div id="knob"></div></div><span id="stick-label">MOVE / AIM</span>
+      </div>
+      <div class="buttons">
+        <button data-bit="3" class="top"><b id="top">START</b><small id="top-help">P1</small></button>
+        <button data-bit="2" class="left"><b id="left">HELMET</b></button>
+        <button data-bit="1" class="right"><b id="right">LEAVE</b></button>
+        <button data-bit="0" class="bottom"><b id="bottom">BOOTS</b><small id="bottom-help">TAP</small></button>
+      </div>
+    </div>
+    <p id="hint">Hold R1 + stick to set CPU difficulty as P1.</p>
+  </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "couch-party-phone-controllers",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22"},
+  "scripts": {
+    "start": "node server.js",
+    "internet": "node server.js --internet"
+  },
+  "dependencies": {"joinstick": "0.2.0", "uqr": "0.1.3"},
+  "overrides": {"ws": "8.22.0"}
+}

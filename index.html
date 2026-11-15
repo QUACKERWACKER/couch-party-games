@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Couch Party Games</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(ellipse at 50% 0%, #232738, #11131c 75%);
+      color: #f8f7f5;
+      font: 1rem/1.5 system-ui, sans-serif;
+    }
+
+    main { width: min(100%, 74rem); padding: clamp(1.5rem, 6vw, 5rem); }
+    h1 { margin: 0 0 1.6rem; font-size: clamp(2rem, 6vw, 4.8rem); line-height: 1; letter-spacing: -.06em; }
+    nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
+
+    .game {
+      overflow: hidden;
+      border: 2px solid #444858;
+      border-radius: 1.1rem;
+      color: inherit;
+      background: #1b1e2a;
+      text-decoration: none;
+    }
+
+    .game:hover { border-color: var(--accent); }
+    .game:focus { outline: 3px solid var(--accent); outline-offset: 4px; }
+    .blitz { --accent: #caff78; }
+    .track { --accent: #d4fa87; }
+    .track-art {
+      background:
+        repeating-linear-gradient(0deg, #faa286 0 2px, transparent 2px 28px),
+        linear-gradient(145deg, #c06b50, #95413e);
+    }
+    .finish-line {
+      width: 12%; height: 100%; transform: skewX(-18deg);
+      background: conic-gradient(#ffe9c7 25%, #33253c 0 50%, #ffe9c7 0 75%, #33253c 0) 0 0 / 28px 28px;
+    }
+    .hoops { --accent: #ffc267; }
+    .ringout { --accent: #ffba8e; }
+    .bedrock { --accent: #67f2d3; }
+    .mine {
+      background:
+        repeating-linear-gradient(16deg, #0d10223b 0 9px, transparent 9px 28px),
+        linear-gradient(110deg, #21433e, #50324b 54%, #744a41);
+    }
+    .crystal {
+      width: 28%;
+      aspect-ratio: 1;
+      background: linear-gradient(135deg, #fbe199 25%, #eda860 26% 58%, #b25e50 59%);
+      clip-path: polygon(50% 0, 87% 31%, 75% 75%, 50% 100%, 19% 74%, 10% 32%);
+      transform: rotate(14deg);
+    }
+
+    .art {
+      display: grid;
+      place-items: center;
+      aspect-ratio: 2 / 1;
+      min-height: 7rem;
+      overflow: hidden;
+    }
+
+    .field {
+      background:
+        repeating-linear-gradient(90deg, transparent 0 calc(12.5% - 2px), #caff7840 calc(12.5% - 2px) 12.5%),
+        linear-gradient(135deg, #28563a, #133830);
+    }
+
+    .football {
+      width: 29%;
+      aspect-ratio: 1.7;
+      display: grid;
+      place-items: center;
+      background: #caff78;
+      border: .25rem solid #e6ffbf;
+      border-radius: 90% 12% 90% 12%;
+      transform: rotate(20deg);
+      box-shadow: .65rem .65rem 0 #0b2924;
+    }
+
+    .football::after {
+      content: "";
+      width: 45%;
+      height: 24%;
+      background: repeating-linear-gradient(90deg, #214233 0 16%, transparent 16% 33%);
+      border-bottom: .2rem solid #214233;
+      transform: rotate(-31deg);
+    }
+
+    .hardwood {
+      background: repeating-linear-gradient(0deg, #db9353 0 14px, #e3a163 14px 27px, #bc763f 27px 28px);
+    }
+
+    .basketball {
+      width: 21%;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      border: .23rem solid #552746;
+      background:
+        radial-gradient(ellipse at 0% 50%, transparent 32%, #552746 33% 38%, transparent 39%),
+        radial-gradient(ellipse at 100% 50%, transparent 32%, #552746 33% 38%, transparent 39%),
+        linear-gradient(transparent 47%, #552746 48% 52%, transparent 53%),
+        #fc923b;
+      box-shadow: .46rem .46rem 0 #9c542e;
+      transform: rotate(-25deg);
+    }
+
+    .arena {
+      background:
+        repeating-linear-gradient(0deg, transparent 0 23px, #ffba8e15 23px 24px),
+        repeating-linear-gradient(90deg, transparent 0 23px, #ffba8e15 23px 24px),
+        linear-gradient(140deg, #5c2a43, #2a203a);
+    }
+
+    .platform {
+      width: 36%;
+      aspect-ratio: 1.7;
+      position: relative;
+      border-radius: 50%;
+      border: .32rem solid #ffba8e;
+      background: #803f56;
+      box-shadow: 0 .65rem 0 #29192b, inset 0 0 0 .45rem #9d5563;
+      transform: rotate(-12deg);
+    }
+
+    .platform::before, .platform::after {
+      content: "";
+      position: absolute;
+      top: 21%;
+      width: 26%;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      box-shadow: 0 .3rem 0 #341d38;
+    }
+
+    .platform::before { left: 14%; background: #77e1f4; }
+    .platform::after { top: 38%; right: 14%; background: #ffba8e; }
+
+    .details { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: 1rem 1.2rem; }
+    .title { display: block; font-size: clamp(1.45rem, 3.5vw, 2.4rem); font-weight: 800; letter-spacing: -.04em; line-height: 1.15; }
+    .genre, .controls { color: #c2c4d3; }
+    .play { color: var(--accent); font-weight: 700; white-space: nowrap; }
+    .controls { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; margin: 1.5rem 0 0; font-size: .95rem; }
+    .controls strong { color: #f8f7f5; }
+
+    @media (max-width: 37rem) {
+      nav { grid-template-columns: 1fr; }
+      .art { aspect-ratio: 2.8 / 1; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Couch Party Games</h1>
+    <nav aria-label="Choose a game">
+      <a class="game blitz" href="/Blitz%207/game/" aria-labelledby="blitz-title" aria-describedby="blitz-genre">
+        <div class="art field" aria-hidden="true"><span class="football"></span></div>
+        <div class="details">
+          <div><span class="title" id="blitz-title">Blitz 7</span><span class="genre" id="blitz-genre">Couch football</span></div>
+          <span class="play" aria-hidden="true">Play →</span>
+        </div>
+      </a>
+      <a class="game hoops" href="/Blitz%20Hoops/" aria-labelledby="hoops-title" aria-describedby="hoops-genre">
+        <div class="art hardwood" aria-hidden="true"><span class="basketball"></span></div>
+        <div class="details">
+          <div><span class="title" id="hoops-title">Blitz Hoops</span><span class="genre" id="hoops-genre">3-on-3 couch basketball</span></div>
+          <span class="play" aria-hidden="true">Play →</span>
+        </div>
+      </a>
+      <a class="game track" href="/Blitz%20Track/" aria-labelledby="track-title" aria-describedby="track-genre">
+        <div class="art track-art" aria-hidden="true"><span class="finish-line"></span></div>
+        <div class="details">
+          <div><span class="title" id="track-title">Blitz Track</span><span class="genre" id="track-genre">Couch track &amp; field</span></div>
+          <span class="play" aria-hidden="true">Play →</span>
+        </div>
+      </a>
+      <a class="game ringout" href="/Ringout/" aria-labelledby="ringout-title" aria-describedby="ringout-genre">
+        <div class="art arena" aria-hidden="true"><span class="platform"></span></div>
+        <div class="details">
+          <div><span class="title" id="ringout-title">Ringout</span><span class="genre" id="ringout-genre">Arena brawler</span></div>
+          <span class="play" aria-hidden="true">Play →</span>
+        </div>
+      </a>
+      <a class="game bedrock" href="/Bedrock/" aria-labelledby="bedrock-title" aria-describedby="bedrock-genre">
+        <div class="art mine" aria-hidden="true"><span class="crystal"></span></div>
+        <div class="details">
+          <div><span class="title" id="bedrock-title">Bedrock Rivals</span><span class="genre" id="bedrock-genre">Mining tycoon versus</span></div>
+          <span class="play" aria-hidden="true">Play →</span>
+        </div>
+      </a>
+    </nav>
+    <p class="controls">
+      <span><strong>D-pad / Left stick</strong> Choose</span>
+      <span><strong>A / Cross</strong> Play</span>
+      <span><strong>Arrow keys / Enter</strong> Keyboard</span>
+    </p>
+  </main>
+  <script>
+    const games = Array.from(document.querySelectorAll('.game'));
+    let selected = 0;
+    let previousInputs = new Map();
+    let frame;
+    let restoring = false;
+
+    function select(index) {
+      selected = (index + games.length) % games.length;
+      games[selected].focus();
+    }
+
+    games.forEach((game, index) => {
+      game.addEventListener('focus', () => { selected = index; });
+    });
+
+    const directions = {ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1};
+    document.addEventListener('keydown', (event) => {
+      if (!Object.hasOwn(directions, event.key) || event.altKey || event.metaKey || event.ctrlKey) return;
+      event.preventDefault();
+      select(selected + directions[event.key]);
+    });
+
+    function pollControllers() {
+      let pads;
+      try {
+        pads = navigator.getGamepads();
+      } catch {
+        return;
+      }
+
+      const currentInputs = new Map();
+      for (const pad of pads) {
+        if (!pad?.connected || pad.mapping !== 'standard') continue;
+        const [x, y] = pad.axes;
+        const pressed = (button) => Boolean(pad.buttons[button]?.pressed);
+        const choice = pressed(14) || pressed(12) || x < -.55 || y < -.55 ? -1
+          : pressed(15) || pressed(13) || x > .55 || y > .55 ? 1 : null;
+        const confirm = pressed(0);
+        const previous = previousInputs.get(pad.index);
+        currentInputs.set(pad.index, {choice, confirm});
+
+        if (!document.hasFocus()) continue;
+        if (choice !== null && choice !== previous?.choice) select(selected + choice);
+        if (confirm && (previous ? !previous.confirm : !restoring)) {
+          games[selected].click();
+          return;
+        }
+      }
+
+      previousInputs = currentInputs;
+      frame = requestAnimationFrame(pollControllers);
+    }
+
+    window.addEventListener('pageshow', (event) => {
+      if (document.activeElement === document.body) select(selected);
+      previousInputs.clear();
+      restoring = event.persisted || performance.getEntriesByType('navigation')[0]?.type === 'back_forward';
+      if (navigator.getGamepads) frame = requestAnimationFrame(pollControllers);
+    });
+    window.addEventListener('pagehide', () => cancelAnimationFrame(frame));
+  </script>
+</body>
+</html>

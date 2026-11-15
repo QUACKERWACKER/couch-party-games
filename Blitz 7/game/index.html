@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Blitz 7 — Couch Football</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+<script src="qr-host.js" defer></script>
+<script src="/joinstick-host.js" data-game="blitz" defer></script>
+<script src="game.js" defer></script>
+</head>
+<body>
+<main>
+  <header class="mast"><div class="brand"><span class="bolt">ϟ</span><h1>BLITZ <em>7</em></h1></div><span class="mode">LOCAL COUCH FOOTBALL</span></header>
+  <section class="scoreboard" aria-label="Scoreboard">
+    <div class="team coral"><span>◆ HOT DOGS<small id="red">7 CPU</small></span><strong id="s0">00</strong></div>
+    <div class="clock"><small id="quarter">Q1</small><strong id="clock">0:23</strong><small id="down">1ST &amp; 10</small></div>
+    <div class="team blue"><strong id="s1">00</strong><span>TURBO TOADS ◆<small id="blue">7 CPU</small></span></div>
+  </section>
+  <div class="arena">
+    <canvas width="960" height="432" tabindex="0" aria-label="Top-down football field"></canvas>
+    <div class="overlay" id="menu" hidden>
+      <div class="ticket">
+        <h2 id="title"></h2>
+        <p id="intro"></p>
+        <button id="start">RESUME</button>
+      </div>
+    </div>
+    <div id="call" class="call" hidden></div>
+    <section id="postgame" class="postgame" aria-labelledby="stats-heading" hidden>
+      <header class="postgame-head">
+        <div><h2 id="stats-heading">Postgame stats</h2><p id="final-result"></p></div>
+        <strong id="final-score"></strong>
+      </header>
+      <div class="stats-scroll" role="region" aria-label="Player statistics" tabindex="0">
+        <table>
+          <thead><tr><th scope="col">Player / team</th><th scope="col">Rush yds</th><th scope="col">Pass C/A</th>
+            <th scope="col">Pass yds</th><th scope="col">Rec / yds</th><th scope="col">TD</th>
+            <th scope="col">Pts</th><th scope="col">Tackles</th><th scope="col">Sacks</th><th scope="col">INT</th></tr></thead>
+          <tbody id="stats-body"></tbody>
+        </table>
+      </div>
+      <footer class="postgame-footer"><small>Passing shows completions / attempts. Sacks also count as tackles. CPU players are grouped by team.</small>
+      <button id="stats-lobby">BACK TO LOBBY</button></footer>
+    </section>
+  </div>
+  <div class="ribbon"><span id="status" role="status">● PRESS BOTTOM FACE BUTTON TO JOIN</span><button id="pause" disabled>PAUSE</button></div>
+  <section class="lobby-panel" id="lobby" aria-label="Player lobby">
+    <div class="lobby-instructions">
+      <div><b>Move</b><small>Left stick / D-pad</small></div>
+      <div><b>Join / Boots</b><small>Bottom · press again for boots</small></div>
+      <div><b>Helmet</b><small>Left face button</small></div>
+      <div><b>Leave</b><small>Right face button</small></div>
+      <div><b>Choose team</b><small>Tap R1 / right bumper</small></div>
+      <div><b>Start (P1)</b><small>Top face button / Start</small></div>
+    </div>
+    <div class="lobby-actions">
+      <button id="keyboard" class="secondary" aria-pressed="false">KEYBOARD · OFF</button>
+      <div><button id="lobby-start">START CPU MATCH</button><small id="lobby-host">Click the field if your controller does not respond</small></div>
+    </div>
+  </section>
+  <div class="cpu-setting" id="cpu-setting">
+    <div><b>CPU difficulty <output id="cpu-difficulty" aria-live="polite">3</output>/10</b>
+    <meter id="cpu-level" aria-label="CPU difficulty" min="1" max="10" value="3"></meter></div>
+    <small>P1 · Hold R1 + stick up/down<br>Keyboard · Hold R + W/S</small>
+  </div>
+  <div class="lobby-roster" id="lobby-roster" aria-label="Remove controller players" hidden></div>
+  <details class="qr-controller" id="qr-controller">
+    <summary>Use a phone as a controller</summary>
+    <div class="qr-content">
+      <img id="phone-qr" width="144" height="144" alt="QR code for the Blitz 7 phone controller" hidden>
+      <div><p id="qr-hint">The phone controller needs the Couch Party Games launcher and a local Wi‑Fi connection.</p>
+      <a id="phone-link" target="_blank" rel="noopener noreferrer" hidden>Open phone link</a></div>
+    </div>
+  </details>
+  <section class="controls" aria-label="Controls">
+    <div><kbd>WASD</kbd><b>Move</b><small>Left stick / arrows</small></div>
+    <div><kbd>J</kbd><b>Snap / pass / pick</b><small>Bottom · hold to charge, release to pass</small></div>
+    <div><kbd>K</kbd><b>Sprint / grapple</b><small>Right / Circle · hold to grab</small></div>
+    <div><kbd>L</kbd><b>Dash / juke</b><small>Left · dash on defense</small></div>
+    <div><kbd>I</kbd><b>Handoff / kick</b><small>Top · kick before snap</small></div>
+  </section>
+  <details><summary>How to play</summary><p>Hot Dogs attack right. Turbo Toads attack left. Your player has a P-number overhead. Use the lobby to find your player and pick helmet and boot colors. The first player to join becomes P1 and gets the star and start controls. Only P1 can pause or resume with Start on a controller or Escape on the keyboard. Tap R1 / right bumper to switch teams. P1 can hold R1 and tilt the stick up or down to adjust CPU difficulty from 1 to 10. Keyboard players use WASD to move, Q/E to switch teams, J for boots, and L for helmets. On a change of possession, the next human teammate takes over at quarterback. CPU-only teams rotate through their roster. Before the snap, the QB moves the stick up or down to choose an offensive play and see its routes drawn on the field. RB Handoff and both Sweep plays automatically give the ball to the running back at the snap if the back stays close. The defensive captain uses up or down to choose balanced coverage, blitz, deep coverage, or a goal-line wall. The field shows who can make each call. After the snap, hold J or the bottom face button again to charge a pass. Aim with the stick or movement keys and follow the arrow to see where the ball will land. Lead moving receivers and release to throw. The arrow turns green when the aim assist nudges the landing spot toward a nearby receiver. Your quarterback can pass once from behind the line of scrimmage. CPU quarterbacks will look for humans who call for the ball. On defense, move toward the landing spot and tap J or the bottom face button as the pass comes down. The ball flashes gold when it is low enough to intercept. A pick stays live until the returner is down, goes out, or scores. In the open field, defenders gain ground on ball carriers, so use blockers, jukes, and changes of direction to break away. Use L or the left face button to dash after the runner. Stay in contact with the ball carrier briefly to tackle. Hold K or the right face button (Circle) to grapple the opponent you are facing, pull them in, and slow them down. A juke can break the grip. Grabbing someone without the ball can draw a defensive holding or pass interference flag. The whistle is followed by a zoomed replay and the referee’s ruling.</p><p>Get 10 yards in four downs. Touchdowns earn six points. After a touchdown, the scoring quarterback presses I or the top face button to kick for one, or J or the bottom face button to run a two-point play from the two-yard line. On fourth down, choose PUNT with up or down and press J or the bottom face button to kick it away. Press I or the top face button before the snap to attempt a field goal from within 48 yards of kick distance. The QB can dash once the play is two seconds old. Two defenders closing in behind the line shut down passes, handoffs, and dashes. Stay trapped and the QB takes a sack. On the kick meter, press I or the top face button again as the marker hits the gold zone. Kickoffs open each half and follow scoring plays. Aim for the bright center of the kickoff meter to pin the receiver deep. Timing farther from center gives the returner better field position. The CPUs handle any unclaimed kicking and return roles. Quarters last 23 seconds of live play. Halftime shows a replay reel of first-half touchdowns, flags, and other highlights. Gold prize crates appear near the sidelines. Stay on a crate briefly with no opponent in the claim circle to win it. The prize wheel pauses the play, then awards your team a temporary boost. Its timer only runs during live play.</p></details>
+</main>
+</body>
+</html>

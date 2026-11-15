@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ringout · Local Arena</title>
+<link rel="stylesheet" href="style.css?v=card-overhaul">
+<script defer src="cards.js?v=card-overhaul"></script>
+<script defer src="cosmetics.js"></script>
+<script defer src="maps.js?v=card-overhaul"></script>
+<script defer src="card-effects.js"></script>
+<script defer src="build-mode.js"></script>
+<script defer src="kinetic.js?v=shove-deck"></script>
+<script src="/joinstick-host.js" data-game="ringout" defer></script>
+<script defer src="game.js?v=shove-deck"></script>
+<script defer src="themes.js"></script>
+</head>
+<body>
+<main>
+<header><div class="brand"><i class="brand-mark" aria-hidden="true"></i>Ringout</div><div class="header-tools">
+<details id="themeMenu"><summary aria-label="Menu themes">Theme</summary>
+<div class="theme-panel" role="group" aria-label="Choose menu theme">
+<button type="button" data-theme="arcade" aria-pressed="true">Arcade</button>
+<button type="button" data-theme="glacier" aria-pressed="false">Glacier</button>
+<button type="button" data-theme="ember" aria-pressed="false">Ember</button>
+<button type="button" data-theme="midnight" aria-pressed="false">Midnight</button>
+</div></details><details id="gameHelp">
+<summary aria-label="Game help">?</summary>
+<div class="help-panel">
+<h2>How to play</h2>
+<p>Stay on the platform and knock opponents off. Hold and release Push to charge it, even while dashing. Hold past the red full-charge timer to launch yourself backward. Ferry riders are protected while off the dock. Double-tap Dash, hold to aim, and keep holding until Super Dash launches. Release early to cancel. Dodge just before a push to parry it.</p>
+<table><thead><tr><th>Action</th><th>Controller</th><th>WASD</th><th>Arrows</th></tr></thead>
+<tbody><tr><th>Move</th><td>Stick / D-pad</td><td>W A S D</td><td>↑ ← ↓ →</td></tr>
+<tr><th>Dash</th><td>A / ×</td><td>F</td><td>K</td></tr>
+<tr><th>Push</th><td>X / □</td><td>G</td><td>L</td></tr>
+<tr><th>Dodge</th><td>B / ○</td><td>H</td><td>;</td></tr>
+<tr><th>Aim</th><td>Right stick</td><td>Movement</td><td>Movement</td></tr>
+<tr><th>Trick</th><td>RB / R1</td><td>Y</td><td>.</td></tr>
+<tr><th>Emote</th><td>Y / △</td><td>T</td><td>/</td></tr></tbody></table>
+<button id="bindTrickW" type="button">Bind WASD Trick</button> <button id="bindTrickArrows" type="button">Bind arrows Trick</button><button id="bindTrickPad" type="button">Bind controller Trick</button><p id="trickBindStatus" role="status"></p>
+<button id="haptics" type="button" aria-pressed="true">Controller vibration · On</button>
+<h3>Modes</h3>
+<p><b>Versus</b> First to two round wins.<br><b>Rounds</b> Everyone starts with the same moves. Hold and release to launch nearby fighters. Upgrades change the shove’s reach, shape, or what happens when it lands. After a fight, everyone except the winner picks an upgrade at the same time. First to five with the outright lead wins. Trick Draft and Classic Rounds keep their original card pools.<br><b>Endless co-op</b> Fight CPU waves and draft every two clears.</p>
+<p>During drafts, check your build and look for offers marked <b>Combos with</b>. Aim with the stick or movement keys. Tap push to bat arrows or move mines. A colored ring or countdown marks an incoming effect. A ghost with <b>Last Word</b> can aim and tap push once after the windup.</p>
+<h3>Player setup</h3>
+<p>Use the stick or D-pad to browse options, A / × to select, Up to reach the tabs, or B / ○ for the next page, and Start to ready. Keyboard players use R or / to ready, or click their Ready button.</p>
+</div></details></div></header>
+<section class="scoreboard" aria-label="Scoreboard">
+<div class="round"><strong id="round">ROUND 01</strong><small id="format">BEST OF THREE</small></div>
+<div id="scores" tabindex="0" role="group" aria-label="Player scores"></div>
+</section>
+<section class="arena" aria-label="Ringout arena">
+<canvas id="field" width="1000" height="480" aria-label="Ringout game arena"></canvas>
+<div id="arenaNotice" hidden aria-live="polite"></div>
+<div class="overlay" id="overlay">
+<small id="eyebrow">FIRST TO TWO WINS</small>
+<h1 id="title">RINGOUT</h1>
+<p id="subtitle">Push your opponent off the platform.</p>
+<div id="results" tabindex="0" hidden></div>
+<div class="actions"><button id="modeBack" type="button" hidden>‹ All modes</button><button id="action" type="button">Start match</button><button id="pauseMenu" hidden>Main menu</button><button id="resultsLobby" hidden>Back to lobby</button><button id="customize" hidden>Customize</button></div>
+<div id="modeChoices" hidden aria-label="Choose a game mode">
+<button data-mode="versus"><i class="mode-icon" style="--icon:0" aria-hidden="true"></i><strong>Versus</strong><span>First to 2 wins</span><small>2+ players</small></button>
+<button data-mode="rounds"><i class="mode-icon" style="--icon:1" aria-hidden="true"></i><strong>Rounds</strong><span>Lose the fight · Build your comeback</span><small>2+ players</small></button>
+<button data-mode="tricks"><i class="mode-icon" style="--icon:1" aria-hidden="true"></i><strong>Trick Draft</strong><span>Pick a special move first</span><small>2+ players</small></button>
+<button data-mode="builds"><i class="mode-icon" style="--icon:1" aria-hidden="true"></i><strong>Rounds · Quick</strong><span>Three-fight minimum</span><small>2+ players</small></button>
+<button data-mode="classic"><i class="mode-icon" style="--icon:1" aria-hidden="true"></i><strong>Classic Rounds</strong><span>Original upgrade deck</span><small>2+ players</small></button>
+<button data-mode="draft"><i class="mode-icon" style="--icon:2" aria-hidden="true"></i><strong>Draft Battle</strong><span>Build from a shared deck</span><small>2+ players</small></button>
+<button data-mode="team"><i class="mode-icon" style="--icon:3" aria-hidden="true"></i><strong>Team Battle</strong><span>Two teams · No friendly pushes</span><small>2+ players</small></button>
+<button data-mode="coop"><i class="mode-icon" style="--icon:4" aria-hidden="true"></i><strong>Endless co-op</strong><span>Survive CPU waves</span><small>1+ players</small></button>
+<button data-mode="hill"><i class="mode-icon" style="--icon:5" aria-hidden="true"></i><strong>King of the Hill</strong><span>Hold the zone alone</span><small>2+ players</small></button>
+<button data-mode="crown"><i class="mode-icon" style="--icon:6" aria-hidden="true"></i><strong>Crown Chase</strong><span>Steal the crown with a push</span><small>2+ players</small></button>
+<button data-mode="stocks"><i class="mode-icon" style="--icon:7" aria-hidden="true"></i><strong>Last Stock</strong><span>Outlast the other players</span><small>2+ players</small></button>
+<button data-mode="crush"><i class="mode-icon" style="--icon:8" aria-hidden="true"></i><strong>Closing Ring</strong><span>Fight as the boundary shrinks</span><small>2+ players</small></button>
+<button data-mode="fuse"><i class="mode-icon" style="--icon:9" aria-hidden="true"></i><strong>Hot Potato</strong><span>Pass the fuse with a push</span><small>2+ players</small></button>
+<button data-mode="story"><i class="mode-icon" style="--icon:2" aria-hidden="true"></i><strong>Co-op Story</strong><span>Three chapters · One connected story</span><small>1+ players</small></button>
+<button data-mode="custom"><i class="mode-icon" style="--icon:10" aria-hidden="true"></i><strong>Custom</strong><span>Choose your rules</span><small>1+ players</small></button>
+</div>
+<div id="modeSettings" hidden aria-label="Mode settings"></div>
+<div id="lobby" tabindex="-1"><small id="joinCount" aria-live="polite"></small><div id="roster" aria-label="Joined players"></div></div>
+<div id="draftSpotlight" hidden aria-hidden="true"></div>
+<p id="draftBuild" hidden></p>
+<button id="tryTrick" type="button" hidden>Try Trick · RB / R1 · your Trick key</button>
+<canvas id="trickPreview" width="240" height="80" hidden aria-label="Trick preview"></canvas>
+<div id="kineticDraft" hidden aria-label="Simultaneous upgrade draft"></div>
+<div id="draft" tabindex="-1" hidden></div>
+<p id="draftPick" role="status" hidden></p>
+<span id="shortcut">D-pad / stick to browse · A / × to select · Start to play</span>
+</div>
+</section>
+
+<footer><span id="respawn" hidden aria-label="Respawn timers"></span><button id="pause" hidden>Pause <kbd>Esc</kbd></button></footer>
+</main>
+<div id="statTip" role="tooltip" hidden></div>
+</body>
+</html>
