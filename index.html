@@ -68,114 +68,17 @@
     .game:focus { outline: 3px solid var(--accent); outline-offset: 4px; }
     .blitz { --accent: #caff78; }
     .track { --accent: #d4fa87; }
-    .track-art {
-      background:
-        repeating-linear-gradient(0deg, #faa286 0 2px, transparent 2px 28px),
-        linear-gradient(145deg, #c06b50, #95413e);
-    }
-    .finish-line {
-      width: 12%; height: 100%; transform: skewX(-18deg);
-      background: conic-gradient(#ffe9c7 25%, #33253c 0 50%, #ffe9c7 0 75%, #33253c 0) 0 0 / 28px 28px;
-    }
     .hoops { --accent: #ffc267; }
     .ringout { --accent: #ffba8e; }
     .bedrock { --accent: #67f2d3; }
-    .mine {
-      background:
-        repeating-linear-gradient(16deg, #0d10223b 0 9px, transparent 9px 28px),
-        linear-gradient(110deg, #21433e, #50324b 54%, #744a41);
-    }
-    .crystal {
-      width: 28%;
-      aspect-ratio: 1;
-      background: linear-gradient(135deg, #fbe199 25%, #eda860 26% 58%, #b25e50 59%);
-      clip-path: polygon(50% 0, 87% 31%, 75% 75%, 50% 100%, 19% 74%, 10% 32%);
-      transform: rotate(14deg);
-    }
-
     .art {
-      display: grid;
-      place-items: center;
-      aspect-ratio: 2 / 1;
-      min-height: 7rem;
-      overflow: hidden;
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 2.1 / 1;
+      object-fit: cover;
+      background: #141824;
     }
-
-    .field {
-      background:
-        repeating-linear-gradient(90deg, transparent 0 calc(12.5% - 2px), #caff7840 calc(12.5% - 2px) 12.5%),
-        linear-gradient(135deg, #28563a, #133830);
-    }
-
-    .football {
-      width: 29%;
-      aspect-ratio: 1.7;
-      display: grid;
-      place-items: center;
-      background: #caff78;
-      border: .25rem solid #e6ffbf;
-      border-radius: 90% 12% 90% 12%;
-      transform: rotate(20deg);
-      box-shadow: .65rem .65rem 0 #0b2924;
-    }
-
-    .football::after {
-      content: "";
-      width: 45%;
-      height: 24%;
-      background: repeating-linear-gradient(90deg, #214233 0 16%, transparent 16% 33%);
-      border-bottom: .2rem solid #214233;
-      transform: rotate(-31deg);
-    }
-
-    .hardwood {
-      background: repeating-linear-gradient(0deg, #db9353 0 14px, #e3a163 14px 27px, #bc763f 27px 28px);
-    }
-
-    .basketball {
-      width: 21%;
-      aspect-ratio: 1;
-      border-radius: 50%;
-      border: .23rem solid #552746;
-      background:
-        radial-gradient(ellipse at 0% 50%, transparent 32%, #552746 33% 38%, transparent 39%),
-        radial-gradient(ellipse at 100% 50%, transparent 32%, #552746 33% 38%, transparent 39%),
-        linear-gradient(transparent 47%, #552746 48% 52%, transparent 53%),
-        #fc923b;
-      box-shadow: .46rem .46rem 0 #9c542e;
-      transform: rotate(-25deg);
-    }
-
-    .arena {
-      background:
-        repeating-linear-gradient(0deg, transparent 0 23px, #ffba8e15 23px 24px),
-        repeating-linear-gradient(90deg, transparent 0 23px, #ffba8e15 23px 24px),
-        linear-gradient(140deg, #5c2a43, #2a203a);
-    }
-
-    .platform {
-      width: 36%;
-      aspect-ratio: 1.7;
-      position: relative;
-      border-radius: 50%;
-      border: .32rem solid #ffba8e;
-      background: #803f56;
-      box-shadow: 0 .65rem 0 #29192b, inset 0 0 0 .45rem #9d5563;
-      transform: rotate(-12deg);
-    }
-
-    .platform::before, .platform::after {
-      content: "";
-      position: absolute;
-      top: 21%;
-      width: 26%;
-      aspect-ratio: 1;
-      border-radius: 50%;
-      box-shadow: 0 .3rem 0 #341d38;
-    }
-
-    .platform::before { left: 14%; background: #77e1f4; }
-    .platform::after { top: 38%; right: 14%; background: #ffba8e; }
 
     .details { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: 1rem 1.2rem; }
     .title { display: block; font-size: clamp(1.45rem, 3.5vw, 2.4rem); font-weight: 800; letter-spacing: -.04em; line-height: 1.15; }
@@ -184,7 +87,6 @@
 
     @media (max-width: 37rem) {
       nav { grid-template-columns: 1fr; }
-      .art { aspect-ratio: 2.8 / 1; }
     }
   </style>
 </head>
@@ -226,35 +128,35 @@
     <h2 class="games-heading" id="games-title">Choose a game</h2>
     <nav aria-labelledby="games-title">
       <a class="game blitz" data-game="blitz" href="/Blitz%207/game/" aria-labelledby="blitz-title" aria-describedby="blitz-genre">
-        <div class="art field" aria-hidden="true"><span class="football"></span></div>
+        <img class="art" src="./covers/blitz.webp" alt="Football teams lining up on the field" width="960" height="432" decoding="async">
         <div class="details">
           <div><span class="title" id="blitz-title">Blitz 7</span><span class="genre" id="blitz-genre">Couch football</span></div>
           <span class="play" aria-hidden="true">Play →</span>
         </div>
       </a>
       <a class="game hoops" data-game="hoops" href="/Blitz%20Hoops/" aria-labelledby="hoops-title" aria-describedby="hoops-genre">
-        <div class="art hardwood" aria-hidden="true"><span class="basketball"></span></div>
+        <img class="art" src="./covers/hoops.webp" alt="Two basketball teams on the hardwood court" width="960" height="500" decoding="async">
         <div class="details">
           <div><span class="title" id="hoops-title">Blitz Hoops</span><span class="genre" id="hoops-genre">3-on-3 couch basketball</span></div>
           <span class="play" aria-hidden="true">Play →</span>
         </div>
       </a>
       <a class="game track" data-game="track" href="/Blitz%20Track/" aria-labelledby="track-title" aria-describedby="track-genre">
-        <div class="art track-art" aria-hidden="true"><span class="finish-line"></span></div>
+        <img class="art" src="./covers/track.webp" alt="Two runners racing in a packed track stadium" width="960" height="350" loading="lazy" decoding="async">
         <div class="details">
           <div><span class="title" id="track-title">Blitz Track</span><span class="genre" id="track-genre">Couch track &amp; field</span></div>
           <span class="play" aria-hidden="true">Play →</span>
         </div>
       </a>
       <a class="game ringout" data-game="ringout" href="/Ringout/" aria-labelledby="ringout-title" aria-describedby="ringout-genre">
-        <div class="art arena" aria-hidden="true"><span class="platform"></span></div>
+        <img class="art" src="./covers/ringout.webp" alt="Two fighters facing off in a Ringout arena" width="462" height="220" loading="lazy" decoding="async">
         <div class="details">
           <div><span class="title" id="ringout-title">Ringout</span><span class="genre" id="ringout-genre">Arena brawler</span></div>
           <span class="play" aria-hidden="true">Play →</span>
         </div>
       </a>
       <a class="game bedrock" data-game="bedrock" href="/Bedrock/" aria-labelledby="bedrock-title" aria-describedby="bedrock-genre">
-        <div class="art mine" aria-hidden="true"><span class="crystal"></span></div>
+        <img class="art" src="./covers/bedrock.webp" alt="Miners digging for ore between two underground bases" width="1248" height="700" loading="lazy" decoding="async">
         <div class="details">
           <div><span class="title" id="bedrock-title">Bedrock Rivals</span><span class="genre" id="bedrock-genre">Mining tycoon versus</span></div>
           <span class="play" aria-hidden="true">Play →</span>

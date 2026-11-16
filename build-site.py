@@ -16,6 +16,7 @@ PAGES = {
     "Ringout": ("build-mode.js card-effects.js cards.js cosmetics.js floor-sprites.svg "
                 "game.js kinetic.js maps.js pickups.svg sprites.svg style.css themes.js ui-sprites.svg"),
 }
+COVERS = ("blitz", "hoops", "track", "ringout", "bedrock")
 NOINDEX = '<head>\n<meta name="robots" content="noindex">'
 
 
@@ -38,6 +39,12 @@ def build(output, relay):
         (destination / "index.html").write_text(html)
         for asset in assets.split():
             copyfile(ROOT / folder / asset, destination / asset)
+
+    covers = output / "covers"
+    covers.mkdir()
+    for game in COVERS:
+        file = f"{game}.webp"
+        copyfile(ROOT / "covers" / file, covers / file)
 
     source = ROOT / "phone-controllers/public/phone"
     copyfile(source / "profiles.js", output / "profiles.js")

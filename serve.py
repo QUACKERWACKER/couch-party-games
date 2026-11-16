@@ -11,6 +11,7 @@ from qr_controller import ControllerRoom, QRResponse
 
 ROOT = Path(__file__).resolve().parent
 GAMES = {"blitz": "/Blitz%207/game/", "ringout": "/Ringout/", "bedrock": "/Bedrock/", "hoops": "/Blitz%20Hoops/", "track": "/Blitz%20Track/"}
+COVER_PATHS = {f"/covers/{game}.webp" for game in GAMES}
 ASSET_TYPES = {".html", ".css", ".js", ".svg", ".png", ".jpg", ".webp", ".ico"}
 
 
@@ -58,7 +59,7 @@ class GameFiles(QRResponse, SimpleHTTPRequestHandler):
     def send_head(self):
         url_path = urlsplit(self.path).path
         path = Path(self.translate_path(url_path)).resolve()
-        if url_path not in ("/", "/index.html") and not any(
+        if url_path not in ("/", "/index.html") and url_path not in COVER_PATHS and not any(
             url_path.startswith(route)
             and (path == folder or (folder in path.parents and path.suffix in ASSET_TYPES))
             for route in GAMES.values()
