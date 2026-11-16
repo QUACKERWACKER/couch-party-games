@@ -19,10 +19,24 @@
         <div id="system-buttons" role="group" aria-label="Match controls"></div>
         <div class="utilities">
           <span id="player" hidden></span>
+          <button type="button" id="profile-open" hidden>Players</button>
           <button type="button" id="leave" hidden>Disconnect</button>
         </div>
       </header>
-      <button type="button" id="retry" hidden>Reconnect</button>
+      <form id="join-room" action="./" method="get" hidden>
+        <input type="hidden" name="g" value="lobby">
+        <label for="room-code">Room code</label>
+        <div class="join-fields">
+          <input id="room-code" name="r" type="text" inputmode="text" maxlength="4"
+            pattern="[A-Za-z]{4}" title="Four letters" autocomplete="off" autocapitalize="characters"
+            spellcheck="false" aria-describedby="status" required>
+          <button type="submit">Join room</button>
+        </div>
+      </form>
+      <div class="join-recovery" hidden>
+        <button type="button" id="retry">Reconnect</button>
+        <a href="./">Enter a different code</a>
+      </div>
       <section id="controls" aria-label="Game controls" hidden>
         <div class="stick-group" id="movement">
           <div class="stick" data-stick="move" tabindex="0" role="group" aria-labelledby="move-label" aria-describedby="move-keys">
@@ -48,5 +62,22 @@
       </footer>
     </main>
   </div>
+  <dialog id="profile-dialog" aria-labelledby="profile-title">
+    <form method="dialog">
+      <h2 id="profile-title">Your player</h2>
+      <div class="profile-fields">
+        <label>Nickname <input name="nickname" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
+        <label>Accent color <select name="color"></select></label>
+      </div>
+      <fieldset>
+        <legend>Primary avatar</legend>
+        <div id="profile-avatars"></div>
+      </fieldset>
+      <div class="profile-actions">
+        <button value="cancel">Cancel</button>
+        <button value="save">Save player</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>

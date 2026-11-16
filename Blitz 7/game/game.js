@@ -311,9 +311,11 @@ function drawRoster() {
   const sorted=[...controllers.entries()].sort((a,b)=>a[1].seat-b[1].seat);
   for (const [index,{seat,profile,team}] of sorted) {
     const button=document.createElement('button');
-    const label='P'+(seat+1);
+    const identity=window.couchJoinstick?.profile?.(index);
+    const label=identity?.name || 'P'+(seat+1);
     button.className='secondary roster-player';
-    button.style.setProperty('--helmet',helmetColors[profile.helmet]);
+    button.dataset.controller=index;
+    button.style.setProperty('--helmet',(!profile.customHelmet && identity?.accent) || helmetColors[profile.helmet]);
     button.style.setProperty('--boots',bootColors[profile.boot]);
     button.style.borderColor=colors[team];
     button.textContent=label+' ×';
@@ -382,7 +384,8 @@ function assignSeats() {
     const {seat}=entry;
     const player=players[entry.team*7+entry.fieldSlot];
     const profile=owner==='keyboard' ? keyboardProfile : entry.profile;
-    Object.assign(player,{owner,label:'P'+(seat+1),profile});
+    const identity=window.couchJoinstick?.profile?.(owner);
+    Object.assign(player,{owner,label:identity?.name || 'P'+(seat+1),profile});
   }
   $('keyboard').disabled=controllers.size===14;
   $('keyboard').textContent=keyboard ? 'KEYBOARD · P'+(keyboardProfile.seat+1) : 'KEYBOARD · OFF';
@@ -846,7 +849,8 @@ function celebrate(x) {
 function replaySnapshot() {
   const avatars=players.map(p=>({
     x:p.x,y:p.y,team:p.team,label:p.label,fx:p.fx,step:p.step,dive:p.dive,
-    profile:p.profile && {helmet:p.profile.helmet,boot:p.profile.boot},
+    profile:p.profile && {helmet:p.profile.helmet,boot:p.profile.boot,customHelmet:p.profile.customHelmet},
+    accent:window.couchJoinstick?.profile?.(p.owner)?.accent,
     replayCarrier:p===carrier,
     grip:p.grip && {x:p.grip.x,y:p.grip.y}
   }));
@@ -1911,7 +1915,8 @@ function sprite(p) {
   rect(x-7,y+6+stride,6,4,boots);
   rect(x+2,y+6-stride,6,4,boots);
   rect(x-7,y-13,14,9,'#1b2428');
-  rect(x-6,y-14,12,8,helmetColors[p.profile?.helmet ?? 0]);
+  const accent=p.accent || window.couchJoinstick?.profile?.(p.owner)?.accent;
+  rect(x-6,y-14,12,8,(!p.profile?.customHelmet && accent) || helmetColors[p.profile?.helmet ?? 0]);
   rect(x-2,y-14,4,8,color);
   rect(x+(p.fx<0?-7:3),y-10,5,4,'#26323a');
   if (p.stun) {
@@ -1970,9 +1975,10 @@ function updateLobby(dt) {
       position.step+=dt*15;
       position.fx=input.x || position.fx;
     }
-    const badge=p.owner==='keyboard' || (!input.edge[0] && !input.edge[2]) ? null : $('lobby-roster').querySelector('[aria-label="Remove '+p.label+'"]');
+    const badge=p.owner==='keyboard' || (!input.edge[0] && !input.edge[2]) ? null : $('lobby-roster').querySelector('[data-controller="'+p.owner+'"]');
     if (input.edge[2]) {
       profile.helmet=(profile.helmet+1)%helmetColors.length;
+      profile.customHelmet=true;
       const color=helmetColors[profile.helmet];
       badge?.style.setProperty('--helmet',color);
       burst(position.x,position.y-7,color,10,.43,56);

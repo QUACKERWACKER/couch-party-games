@@ -748,7 +748,7 @@ function oval(x, y, w, h, color) {
   ctx.fill();
 }
 
-function mascot(x, floor, team, time, {jump = 0, slow = false, stick = false, official = false} = {}) {
+function mascot(x, floor, team, time, {jump = 0, slow = false, stick = false, official = false, shoes = '#fff5df'} = {}) {
   const color = official ? '#fff0cb' : colors[team];
   const step = Math.sin(time * (slow ? 14 : 25));
   const y = floor - 27 - Math.abs(step) * 3 - jump;
@@ -757,8 +757,8 @@ function mascot(x, floor, team, time, {jump = 0, slow = false, stick = false, of
   ctx.translate(x, y);
   line([[-6, 11], [-8 + step * 13, 18], [-12 + step * 18, 23]], '#2e2032', 7);
   line([[6, 11], [8 - step * 13, 17], [12 - step * 18, 23]], '#452d42', 7);
-  oval(-11 + step * 17, 24, 7, 3.5, '#fff5df');
-  oval(14 - step * 17, 24, 7, 3.5, '#fff5df');
+  oval(-11 + step * 17, 24, 7, 3.5, shoes);
+  oval(14 - step * 17, 24, 7, 3.5, shoes);
   oval(0, 1, 17, 17, color);
   box(-13, 0, 25, 9, official ? '#233342' : '#27223b');
   oval(-1, -13, 19, 13, color);
@@ -862,6 +862,7 @@ function raceView() {
       jump: ['jump', 'splash'].includes(gate.kind) && runner.boost > .26 ? 21 : 0,
       slow: runner.slow > 0,
       stick: relay,
+      shoes: window.couchJoinstick?.profile?.(Number(runner.id))?.accent,
     });
     if (t < runner.swingUntil && relay) {
       line([[x + 22, base - 10], [x + 41, base + 13]], '#fff379', 7);
@@ -909,7 +910,8 @@ function fieldView() {
     const x = runner.team ? 408 : 187;
     const active = t >= 0 && timing.ready && runner.finish === null;
     const flight = active && runner.stage === timing.stage ? Math.sin(Math.PI * clamp(timing.elapsed / 2.65)) : 0;
-    mascot(x + 26 * flight, 260, runner.team, active ? t : 0, {jump: jumping ? flight * 35 : 0, stick: event.id === 'pole' || event.id === 'javelin'});
+    mascot(x + 26 * flight, 260, runner.team, active ? t : 0, {jump: jumping ? flight * 35 : 0, stick: event.id === 'pole' || event.id === 'javelin',
+      shoes: window.couchJoinstick?.profile?.(Number(runner.id))?.accent});
     if (flight && !jumping && event.group === 'Field') oval(x + 240 * timing.elapsed, 220 - flight * 25, 7, 4, colors[runner.team]);
     words(runner.name, x, 281, 18, colors[runner.team], 'center');
     words(runner.finish === Infinity ? 'DQ' : `${Math.round(runner.mark * 100)} PTS · ${runner.strikes}/3 FLAGS`, runner.team ? 932 : 28, 315, 18, colors[runner.team], runner.team ? 'right' : 'left');

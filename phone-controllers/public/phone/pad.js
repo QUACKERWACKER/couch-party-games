@@ -1,3 +1,5 @@
+import './profiles.js';
+
 const relay = typeof couchPhoneRelay === 'undefined' ? location.origin : couchPhoneRelay;
 const games = {
   blitz: {
@@ -59,14 +61,17 @@ const hoopsModes = {
 };
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
-const gameKey = params.get('g');
+const code = params.get('r')?.trim().toUpperCase();
+const validCode = /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/.test(code);
+const gameKey = params.get('g') || (validCode ? 'lobby' : null);
 const managed = gameKey === 'lobby' || params.get('p') === '1';
 const lobby = gameKey === 'lobby';
-const code = params.get('r')?.toUpperCase();
 const game = Object.hasOwn(games, gameKey) ? games[gameKey] : null;
 const actions = new Map();
 const sticks = {};
 const portrait = matchMedia('(orientation: portrait)');
+let profile;
+let menuSelection = 'blitz';
 let pad;
 let movementFrame = 0;
 let lastAim = [0, 0];
@@ -347,17 +352,22 @@ function updateBedrock(info) {
 function roomStatus(status) {
   if (lobby) {
     const connected = status === 'connected';
-    $('leave').hidden = !connected;
-    $('retry').hidden = status !== 'closed';
+    $('leave').hidden = $('profile-open').hidden = $('controls').hidden = $('hint').hidden = !connected;
+    document.querySelector('.join-recovery').hidden = status !== 'closed';
     $('status').textContent = connected ? 'Paired. Choose a game on the shared screen.'
       : status === 'closed' ? 'Disconnected' : 'Reconnecting…';
-    if (connected) pad.send({ready: true, couchGame: null});
+    if (connected) {
+      updateLobbySelection();
+      pad.send({ready: true, couchGame: null, ...(profile && {couchProfile: profile})});
+    } else {
+      neutral();
+    }
     return;
   }
   const connected = status === 'connected';
   $('controls').hidden = $('hint').hidden = $('player').hidden = !connected;
   $('leave').hidden = status === 'closed';
-  $('retry').hidden = status !== 'closed';
+  document.querySelector('.join-recovery').hidden = status !== 'closed';
   $('status').textContent = connected ? 'Connected' : status === 'closed' ? 'Disconnected' : 'Reconnecting…';
   if (!connected && blitzMenu) {blitzMenu.hidden = true; blitzMenu.open = false;}
   clearInterval(bedrockHeartbeat);
@@ -515,6 +525,8 @@ async function connect() {
     const {join} = await import(relay + '/joinstick/client.js');
     const slot = Number(params.get('s')) || undefined;
     pad = await join({room: code, slot, server: relay});
+    params.set('g', gameKey);
+    params.set('r', code);
     params.set('s', pad.slot);
     history.replaceState(null, '', '?' + params);
     pad.on('status', roomStatus);
@@ -530,6 +542,11 @@ async function connect() {
       params.set('g', next);
       location.replace('?' + params);
     });
+    if (lobby) pad.on('message', data => {
+      if (!Object.hasOwn(window.couchProfiles.games, data?.couchSelection)) return;
+      menuSelection = data.couchSelection;
+      updateLobbySelection();
+    });
     if (gameKey === 'blitz') pad.on('message', ({blitz} = {}) => updateBlitz(blitz));
     if (gameKey === 'bedrock') pad.on('message', data => {
       if (data && Object.hasOwn(data, 'bedrock')) updateBedrock(data.bedrock);
@@ -543,16 +560,82 @@ async function connect() {
     roomStatus('connected');
   } catch (error) {
     roomStatus('closed');
-    $('status').textContent = error.code === 'room-not-found' ? 'Room expired. Ask for a new invite.'
+    $('status').textContent = error.code === 'room-not-found' ? 'Room not found. Check the code or ask the host for a new one.'
       : error.code === 'slot-taken' ? 'This room or player slot is full.' : 'Could not connect to the game.';
   }
 }
 
-if (lobby && /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/.test(code)) {
+function updateLobbySelection() {
+  $('hint').textContent = 'Selected: ' + window.couchProfiles.games[menuSelection][0];
+}
+
+function installProfileEditor() {
+  const {games, colors, normalize, avatar} = window.couchProfiles;
+  const dialog = $('profile-dialog');
+  const form = dialog.querySelector('form');
+  const name = form.elements.nickname;
+  const color = form.elements.color;
+  const previews = $('profile-avatars');
+  const art = new Map();
+  const key = 'couch-party-player';
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved) profile = normalize(JSON.parse(saved));
+  } catch {}
+  for (const [id, [label]] of Object.entries(colors)) color.add(new Option(label, id));
+  for (const [id, [title]] of Object.entries(games)) {
+    const choice = document.createElement('label');
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'avatar';
+    radio.value = id;
+    const figure = document.createElement('span');
+    figure.className = 'avatar-art';
+    choice.append(radio, figure, title);
+    previews.append(choice);
+    art.set(id, figure);
+  }
+  function refresh() {
+    for (const [id, figure] of art) figure.replaceChildren(avatar(id, color.value));
+  }
+  color.addEventListener('input', refresh);
+  name.addEventListener('input', () => {
+    const normalized = normalize({name: name.value}).name;
+    if (name.value !== normalized) name.value = normalized;
+  });
+  $('profile-open').onclick = () => {
+    const draft = profile ?? window.couchProfiles.defaults;
+    name.value = draft.name;
+    color.value = draft.color;
+    form.elements.avatar.value = draft.avatar;
+    dialog.returnValue = 'cancel';
+    neutral();
+    refresh();
+    dialog.showModal();
+  };
+  dialog.addEventListener('close', () => {
+    if (dialog.returnValue !== 'save') return;
+    profile = normalize({name: name.value, color: color.value, avatar: form.elements.avatar.value});
+    try { localStorage.setItem(key, JSON.stringify(profile)); } catch {}
+    if (pad?.status === 'connected') pad.send({couchProfile: profile});
+  });
+}
+
+if (lobby && validCode) {
+  document.body.dataset.game = 'lobby';
+  document.querySelector('h1').textContent = 'Couch Party Games';
+  $('move-label').textContent = 'Choose a game';
+  installStick(document.querySelector('[data-stick="move"]'));
+  installAction(0, 'Play');
+  installProfileEditor();
+  addEventListener('blur', neutral);
+  portrait.addEventListener('change', neutral);
+  addEventListener('pagehide', neutral);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) neutral(); });
   $('retry').onclick = () => location.reload();
   $('leave').onclick = () => pad.leave();
   connect();
-} else if (game && /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/.test(code)) {
+} else if (game && validCode) {
   document.body.dataset.game = gameKey;
   document.querySelector('h1').textContent = game.title;
   document.title = game.title + ' · Phone controller';
@@ -602,5 +685,8 @@ if (lobby && /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/.test(code)) {
   }
   connect();
 } else {
-  $('status').textContent = 'Open a controller invite from the games home page.';
+  $('status').textContent = code ? 'Check the four-letter code shown on the shared screen.'
+    : 'Enter the code on the shared screen, or scan its QR code with your camera.';
+  $('join-room').hidden = false;
+  if (code) $('room-code').value = code.slice(0, 4);
 }

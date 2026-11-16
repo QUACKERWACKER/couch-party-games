@@ -3125,7 +3125,15 @@ function draw() {
       ctx.stroke();
       ctx.restore();
     }
+    const identity = i < humanCount && window.couchJoinstick?.profile?.(slots[i]);
     const look = p.look || {shape:0, color:5, accessory:0};
+    if (identity?.accent) {
+      ctx.beginPath();
+      ctx.ellipse(0, 10, 26, 20, 0, 0, 2*Math.PI);
+      ctx.strokeStyle = identity.accent;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
     if (p.dash > 0) {
       ctx.globalAlpha = .28;
       drawCharacter(ctx, look, -32 - p.dx * 21, -32 - p.dy * 21, 64, false);
@@ -3159,6 +3167,12 @@ function draw() {
       ctx.fillText(text,0,-32);
       ctx.fillRect(-width/2,-27,width*remaining/p.pickup.seconds,2);
       ctx.restore();
+    }
+    if (identity?.name) {
+      ctx.fillStyle = identity.accent;
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 12px monospace';
+      ctx.fillText(identity.name, 0, 44);
     }
     if (p.cpuLabel) {
       ctx.fillStyle = '#111822';
@@ -3316,7 +3330,7 @@ function describeRingoutPhones() {
   for (const [slot] of connectedPads) {
     if (!window.couchJoinstick.label(slot)) continue;
     const i = slots.indexOf(slot);
-    const player = i < 0 ? '' : 'Player ' + (i + 1);
+    const player = i < 0 ? '' : window.couchJoinstick?.profile?.(slot)?.name || 'Player ' + (i + 1);
     const describe = (buttons, primary, hint) => { descriptions[slot] = {player,buttons,primary,hint}; };
     if (i < 0) {
       describe(state === 'menu' && !editingMode ? {0:'Join'} : {}, 0,

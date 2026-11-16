@@ -212,7 +212,7 @@ function overlay() {
     const item=document.createElement('span');
     item.textContent=label; item.style.color=colors[side]; ui.roster.append(item);
   }
-  roster.forEach(p=>badge('P'+p.number+' · '+names[p.side]+(p.id===host ? ' · HOST' : ''),p.side));
+  roster.forEach(p=>badge((window.couchJoinstick?.profile?.(p.index)?.name || 'P'+p.number)+' · '+names[p.side]+(p.id===host ? ' · HOST' : ''),p.side));
   const size=teamSize();
   for (let side=0;side<2;side++) {
     const count=size-roster.filter(p=>p.side===side).length;
@@ -818,9 +818,10 @@ function scene(now) {
     rect(u.x-8,y+10,16*Math.min(1,u.hp/(u.guard==='outpost' ? 76 : minionTypes[u.type].hp)),2,color+'ac');
   }
   for (const p of players) {
-    const color=colors[p.side];
+    const color=colors[p.side], profile=window.couchJoinstick?.profile?.(p.index);
+    const identity=profile?.name || (p.number ? 'P'+p.number : 'CPU');
     if (p.hp<=0) {
-      label('P'+p.number+' · '+timer(p.backAt-time),p.x,TOP+p.y-11,12,color,'center');
+      label(identity+' · '+timer(p.backAt-time),p.x,TOP+p.y-11,12,color,'center');
       continue;
     }
     const x=p.x,y=TOP+p.y;
@@ -829,11 +830,10 @@ function scene(now) {
     rect(x-7,y-4,14,12,color);
     rect(x-5,y+8,4,4,'#f1c292');
     rect(x+1,y+8,4,4,'#f1c292');
-    rect(x-7,y-10,14,8,'#ffe0a9');
+    rect(x-7,y-10,14,8,profile?.accent || '#ffe0a9');
     rect(x-9,y-5,18,3,'#fff1d6');
     line(x+p.ax*8,y+p.ay*8,x+p.ax*16,y+p.ay*16,'#fff1d6',4);
-    const identity=p.number ? 'P'+p.number : 'CPU';
-    label(identity,x,y-22,14,color,'center');
+    label(identity,x,y-22,14,profile?.accent || color,'center');
     rect(x-12,y+16,24,3,'#271d29');
     rect(x-12,y+16,24*clamp(p.hp/health(p),0,1),3,color);
     if (p.fuel<.99) rect(x-12,y+20,24*p.fuel,2,'#ffc46e');
@@ -886,7 +886,8 @@ function dashboard() {
   shown.forEach((p,i)=>{
     const x=width*(i%columns)+14,y=TOP+H+13+Math.floor(i/columns)*37;
     const color=colors[p.side], minion=minionTypes[p.minion], upgrade=upgradeTypes[p.upgrade], tier=p.level[p.upgrade];
-    label('P'+p.number,x,y+5,13,color);
+    const profile=window.couchJoinstick?.profile?.(p.index);
+    label(profile?.name || 'P'+p.number,x,y+5,13,profile?.accent || color);
     if (p.picker && time-p.picker.started>=PICK_HOLD) {
       const {choices,field}=p.picker, isUpgrade=field==='upgrade';
       const arrows=isUpgrade ? upgradeArrows : minionArrows;
@@ -934,7 +935,7 @@ function describePhones() {
   for (const seat of roster) {
     if (!seat.phone) continue;
     const player=mode==='play' ? players.find(p=>p.id===seat.id) : null;
-    const info={player:'P'+seat.number,team:names[seat.side],phase:mode,host:seat.id===host};
+    const info={player:window.couchJoinstick?.profile?.(seat.index)?.name || 'P'+seat.number,team:names[seat.side],phase:mode,host:seat.id===host};
     if (player) {
       info.minion=player.minion;
       info.upgrade=player.upgrade;

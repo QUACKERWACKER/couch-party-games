@@ -137,9 +137,14 @@
       }
       return false;
     },
+    profile(index) {
+      for (const [slot, id] of playerIds) {
+        if (id === index) return room.profile(slot);
+      }
+    },
     label(index) {
       for (const [slot, id] of playerIds) {
-        if (id === index) return 'Phone ' + slot;
+        if (id === index) return room.profile(slot)?.name || 'Phone ' + slot;
       }
     },
   };
@@ -233,13 +238,41 @@ function setupLauncher(hostedPhone) {
   const status = dialog.querySelector('[role="status"]');
   const invite = dialog.querySelector('.invite');
   const qr = invite.querySelector('img');
-  const link = invite.querySelector('a');
+  const link = invite.querySelector('.phone-invite');
+  const codeUrl = invite.querySelector('.code-url');
+  const roomCode = invite.querySelector('.room-code');
   const copy = document.querySelector('#copy-phone-invite');
   const start = dialog.querySelector('#start-phone-room');
   const stop = dialog.querySelector('#stop-phone-room');
   const links = [...main.querySelectorAll('.game')];
   const gameKeys = links.map(link => link.dataset.game);
   const ready = new Set();
+  const players = new Map();
+  const roster = document.querySelector('#players-list');
+  const playersOpen = document.querySelector('#players-open');
+  const {avatar, colors, defaults, normalize} = window.couchProfiles;
+  let menuSelection = gameKeys[0];
+
+  function updateRoster() {
+    const entries = [...players].filter(([slot]) => room?.connected(slot)).sort(([a], [b]) => a - b);
+    roster.replaceChildren(...entries.map(([slot, profile]) => {
+      const item = document.createElement('li');
+      const text = document.createElement('div');
+      const name = document.createElement('strong');
+      const phone = document.createElement('small');
+      name.textContent = profile?.name || 'Phone ' + slot;
+      phone.textContent = profile?.name ? 'Phone ' + slot : 'Connected';
+      text.append(name, phone);
+      item.append(avatar(profile?.avatar ?? defaults.avatar, profile?.color ?? defaults.color), text);
+      return item;
+    }));
+    document.querySelector('#players-empty').hidden = entries.length > 0;
+    playersOpen.textContent = entries.length ? `Players (${entries.length})` : 'Players';
+  }
+
+  playersOpen.hidden = false;
+  playersOpen.onclick = () => document.querySelector('#players-room').showModal();
+
   let room, frame, game, selected, listeners;
 
   open.hidden = false;
@@ -277,6 +310,19 @@ function setupLauncher(hostedPhone) {
   }
 
   window.couchPartyLauncher = {
+    selectMenu(key) {
+      if (key === menuSelection) return;
+      menuSelection = key;
+      if (room && !game) room.broadcast({couchSelection: key});
+    },
+    menuPads() {
+      if (game || room?.status !== 'connected') return [];
+      return [...ready].filter(slot => room.connected(slot)).map(slot => {
+        const {x, y, buttons, pressed} = room.input(slot);
+        return {index: 1_000_000 + slot, connected: true, mapping: 'standard', phone: true,
+          axes: [x, y], buttons: [{pressed: Boolean(buttons.b0 || pressed.b0)}]};
+      });
+    },
     attach(child, key) {
       if (!frame || child !== frame.contentWindow || key !== game || !room) return;
       const current = room;
@@ -293,6 +339,7 @@ function setupLauncher(hostedPhone) {
         get status() { return current.status; },
         connected: slot => ready.has(slot) && current.connected(slot),
         input: slot => current.input(slot),
+        profile: slot => players.get(slot),
         send: (slot, data) => current.send(slot, data),
         kick: slot => current.kick(slot),
         on: (event, callback) => { callbacks[event] = callback; },
@@ -318,7 +365,7 @@ function setupLauncher(hostedPhone) {
     const count = Array.from({length: room.slots}, (_, i) => i + 1)
       .filter(slot => room.connected(slot)).length;
     status.textContent = room.status === 'connected'
-      ? `${count} of ${room.slots} phones connected. Scan once, then choose a game on this screen.`
+      ? `${count} of ${room.slots} phones connected. Scan the QR code or enter the room code on your phone.`
       : 'Reconnecting to the phone relay…';
     open.textContent = count ? `Phone controllers (${count})` : 'Phone controllers';
   }
@@ -328,10 +375,14 @@ function setupLauncher(hostedPhone) {
     room = undefined;
     current?.close();
     ready.clear();
+    players.clear();
+    updateRoster();
     if (frame) history.back();
     invite.hidden = stop.hidden = true;
     qr.removeAttribute('src');
     link.removeAttribute('href');
+    codeUrl.removeAttribute('href');
+    codeUrl.textContent = roomCode.textContent = '';
     copy.textContent = 'Copy invite';
     open.textContent = 'Phone controllers';
     start.hidden = start.disabled = false;
@@ -381,12 +432,16 @@ function setupLauncher(hostedPhone) {
       room = current;
       current.on('join', ({slot, rejoin}) => {
         ready.delete(slot);
+        if (!rejoin || !players.has(slot)) players.set(slot, null);
+        updateRoster();
         current.send(slot, {couchGame: game ?? null});
         listeners?.join?.({slot, rejoin});
         updateCount();
       });
       current.on('leave', event => {
         ready.delete(event.slot);
+        if (event.reason === 'kicked') players.delete(event.slot);
+        updateRoster();
         listeners?.leave?.(event);
         updateCount();
       });
@@ -399,8 +454,19 @@ function setupLauncher(hostedPhone) {
           }
           current.input(slot); // Clear presses queued before the new layout was ready.
           ready.add(slot);
+          if (!game) current.send(slot, {couchSelection: menuSelection});
         }
-        if (ready.has(slot) && game) listeners?.message?.(event);
+        if (!ready.has(slot)) return;
+        if (!game && data?.couchProfile && typeof data.couchProfile === 'object') {
+          const profile = normalize(data.couchProfile);
+          profile.accent = colors[profile.color][1];
+          const previous = players.get(slot);
+          if (previous?.name !== profile.name || previous?.avatar !== profile.avatar || previous?.color !== profile.color) {
+            players.set(slot, profile);
+            updateRoster();
+          }
+        }
+        if (game) listeners?.message?.(event);
       });
       current.on('status', value => {
         if (room !== current) return;
@@ -409,6 +475,9 @@ function setupLauncher(hostedPhone) {
       });
       const relay = new URL(couchJoinstickPublicUrl ?? server);
       const inviteUrl = new URL(hostedPhone ?? '/phone/', relay.protocol === 'https:' ? relay : current.joinUrl());
+      codeUrl.href = inviteUrl.href;
+      codeUrl.textContent = inviteUrl.host + inviteUrl.pathname;
+      roomCode.textContent = current.code;
       inviteUrl.searchParams.set('g', 'lobby');
       inviteUrl.searchParams.set('r', current.code);
       link.href = inviteUrl.href;

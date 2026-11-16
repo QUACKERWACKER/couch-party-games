@@ -125,7 +125,7 @@ function assignPlayers() {
       if (human.phone) slot.phoneSeat = human;
     }
   });
-  $('roster').textContent = humans().map(p => `P${p.number} · ${names[p.side]}${p.phone ? p.online ? ' · PHONE' : ' · PHONE OFFLINE' : ''}`).join('  /  ') || 'CPU exhibition';
+  $('roster').textContent = humans().map(p => `${p.identity?.name || `P${p.number}`} · ${names[p.side]}${p.phone ? p.online ? ' · PHONE' : ' · PHONE OFFLINE' : ''}`).join('  /  ') || 'CPU exhibition';
   $('team').textContent = names[keyboard.side] + ' ↔';
   $('team').disabled = !keyboard.enabled;
 }
@@ -218,7 +218,7 @@ function updateDraftSelection() {
 
 function renderDraft() {
   $('draft-rosters').textContent = [0, 1].map(which => {
-    const roster = team(which).map(p => p.human ? `P${p.human.number}` : p.cpu?.name || 'Open');
+    const roster = team(which).map(p => p.human ? p.human.identity?.name || `P${p.human.number}` : p.cpu?.name || 'Open');
     return `${names[which]} · ${roster.join(' / ')}`;
   }).join('  |  ');
   const cards = draft.pool.map((prospect, i) => {
@@ -266,7 +266,7 @@ function beginMatch() {
   for (const p of players) {
     Object.assign(p, {fatigue: 0, injury: 0, injuryCooldown: 0});
     const human = p.human || p.phoneSeat;
-    p.statsLabel = human ? `P${human.number}` : p.cpu.name;
+    p.statsLabel = human ? human.identity?.name || `P${human.number}` : p.cpu.name;
     p.stats = {points: 0, fieldGoals: 0, shots: 0, threes: 0, threeAttempts: 0,
       freeThrows: 0, freeThrowAttempts: 0, rebounds: 0, assists: 0, steals: 0, blocks: 0, fouls: 0};
   }
@@ -350,7 +350,8 @@ function readInputs() {
       const red = humans().filter(p => !p.side).length;
       const blue = humans().length - red;
       if (red + blue < 6) {
-        profile = {side: red <= blue ? 0 : 1, last: buttons, phone: pad.source === 'joinstick', online: true};
+        profile = {side: red <= blue ? 0 : 1, last: buttons, phone: pad.source === 'joinstick', online: true,
+          identity: window.couchJoinstick?.profile?.(pad.index)};
         pads.set(pad.index, profile);
         assignPlayers();
       }
@@ -433,7 +434,7 @@ function describePhoneControls() {
       else if (!owner && flight?.type !== 'pass') phase = 'loose';
       else phase = player?.side === side ? 'offense' : 'defense';
     }
-    labels[index] = {player: `P${profile.number}`, team: names[profile.side], mode: phase};
+    labels[index] = {player: profile.identity?.name || `P${profile.number}`, team: names[profile.side], mode: phase};
   }
   return labels;
 }
@@ -1168,13 +1169,14 @@ function drawPlayer(p, now, hasBall = p === owner) {
   rect(ctx, '#ffeee2', x - 8, top + 6 + stride, 5, 6);
   rect(ctx, '#ffeee2', x + 3, top + 6 - stride, 5, 6);
   rect(ctx, colors[p.side], x - 10, top - 7, 20, 13);
-  rect(ctx, '#fff8d1', x - 9, top + 3, 18, 2);
+  const identity = p.human?.identity;
+  rect(ctx, identity?.accent || '#fff8d1', x - 9, top + 3, 18, 2);
   const skin = ['#c77c55', '#9c563f', '#e9ad7a'][p.slot];
   circle(ctx, x, top - 9, 6, skin, '#392435');
   rect(ctx, '#352539', x - 5, top - 15, 10, 3);
   if (p.human) {
     rect(ctx, '#2b1c30', x - 14, top - 37, 28, 15);
-    lettering(ctx, `P${p.human.number}`, x, top - 29, 12, colors[p.side]);
+    lettering(ctx, identity?.name || `P${p.human.number}`, x, top - 29, 11, identity?.accent || colors[p.side]);
     rect(ctx, '#443045', x - 13, top - 21, 26, 2);
     rect(ctx, colors[p.side], x - 13, top - 21, 26 * p.energy, 2);
   }

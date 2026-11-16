@@ -39,6 +39,8 @@ def build(output, relay):
         for asset in assets.split():
             copyfile(ROOT / folder / asset, destination / asset)
 
+    source = ROOT / "phone-controllers/public/phone"
+    copyfile(source / "profiles.js", output / "profiles.js")
     script = ""
     if relay:
         script = (f"const couchJoinstickServer = {json.dumps(relay)};\n"
@@ -46,11 +48,11 @@ def build(output, relay):
                   "const couchJoinstickHostedPhone = true;\n"
                   + (ROOT / "joinstick-host.js").read_text())
         phone = output / "phone"
-        source = ROOT / "phone-controllers/public/phone"
         phone.mkdir()
         html = (source / "index.html").read_text().replace("<head>", NOINDEX, 1)
         (phone / "index.html").write_text(html)
         copyfile(source / "pad.css", phone / "pad.css")
+        copyfile(source / "profiles.js", phone / "profiles.js")
         (phone / "pad.js").write_text(f"const couchPhoneRelay = {json.dumps(relay)};\n"
                                       + (source / "pad.js").read_text())
     (output / "joinstick-host.js").write_text(script)

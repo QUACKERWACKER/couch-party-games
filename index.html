@@ -22,14 +22,27 @@
     h1 { margin: 0 0 .75rem; font-size: clamp(2rem, 6vw, 4.8rem); line-height: 1; letter-spacing: -.06em; }
     .intro { max-width: 58ch; margin: 0 0 1.6rem; color: #c2c4d3; }
     main[hidden], #phone-room [hidden] { display: none; }
-    #phone-pairing { margin: 0 0 1.5rem; }
+    #phone-pairing, #players-open { margin: 0 .5rem 1.5rem 0; }
+    #players-room { width: min(29rem, 90vw); max-height: 85dvh; color: inherit; background: #1b1e2a;
+      border: 1px solid #59677b; border-radius: 1rem; padding: 1.25rem; }
+    #players-room::backdrop { background: #000a; }
+    #players-room h2 { margin: 0; }
+    #players-list { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+    #players-list li { display: flex; align-items: center; gap: .5rem; padding: .35rem; background: #272b3b; border-radius: .5rem; }
+    #players-list svg { width: 2.25rem; height: 2.25rem; flex: none; }
+    #players-list small { display: block; color: #c2c4d3; }
     #phone-room { width: min(25rem, 90vw); color: inherit; background: #1b1e2a;
       border: 1px solid #59677b; border-radius: 1rem; padding: 1.25rem; text-align: center; }
     #phone-room::backdrop { background: #000a; }
     #phone-room h2 { margin: 0; }
     #phone-room img { display: block; margin: 0 auto .75rem; background: white; }
     #phone-room a { color: #ceeeff; }
-    #phone-room button, #phone-pairing { color: inherit; background: #303747;
+    #phone-room .invite p { margin: .55rem 0; }
+    #phone-room .room-code {
+      display: block; color: #f8f7f5; font: 800 2rem/1.2 ui-monospace, monospace; letter-spacing: .18em;
+    }
+    #phone-room .code-url { overflow-wrap: anywhere; }
+    #phone-room button, #phone-pairing, #players-open, #players-room button { color: inherit; background: #303747;
       border: 1px solid #737b8f; border-radius: .6rem; font: inherit; padding: .5rem .8rem; cursor: pointer; }
     #phone-room button:disabled { opacity: .6; }
     .game-frame { width: 100%; height: 100vh; height: 100dvh; border: 0; display: block; }
@@ -175,14 +188,23 @@
     <h1>Couch Party Games</h1>
     <p class="intro">Pick a game on your shared screen. Play with a keyboard or gamepad.</p>
     <button type="button" id="phone-pairing" aria-haspopup="dialog" hidden>Phone controllers</button>
+    <button type="button" id="players-open" aria-haspopup="dialog" hidden>Players</button>
+    <dialog id="players-room" aria-labelledby="players-title">
+      <h2 id="players-title">Players</h2>
+      <p id="players-empty">Pair phones to add players. Players edit their names and avatars on their phones.</p>
+      <ul id="players-list" aria-label="Connected players"></ul>
+      <form method="dialog"><button autofocus>Done</button></form>
+    </dialog>
     <dialog id="phone-room" aria-labelledby="phone-room-title">
       <h2 id="phone-room-title">Phone controllers</h2>
-      <p role="status">Start a room and scan the QR code before choosing a game.</p>
-      <p class="invite" hidden>
+      <p role="status">Start a room to show a QR code and a four-letter join code.</p>
+      <div class="invite" hidden>
         <img alt="Scan to pair a phone controller" width="192" height="192">
-        <a target="_blank" rel="noopener noreferrer">Open phone invite</a>
+        <p>Room code <strong class="room-code"></strong></p>
+        <p>Enter the code at <a class="code-url" target="_blank" rel="noopener noreferrer"></a></p>
+        <a class="phone-invite" target="_blank" rel="noopener noreferrer">Open phone invite</a>
         <button type="button" id="copy-phone-invite" hidden>Copy invite</button>
-      </p>
+      </div>
       <form method="dialog">
         <button type="button" id="start-phone-room" autofocus>Start room</button>
         <button type="button" id="stop-phone-room" hidden>Disconnect room</button>
@@ -232,10 +254,11 @@
       <span><strong>Arrow keys / Enter</strong> Keyboard</span>
     </p>
   </main>
+  <script src="./profiles.js" defer></script>
   <script src="./joinstick-host.js" defer></script>
   <script>
     const launcher = document.querySelector('main');
-    const phoneRoom = document.querySelector('#phone-room');
+    const dialogOpen = () => Boolean(document.querySelector('dialog[open]'));
     const games = Array.from(document.querySelectorAll('.game'));
     let selected = 0;
     let previousInputs = new Map();
@@ -245,27 +268,28 @@
     function select(index) {
       selected = (index + games.length) % games.length;
       games[selected].focus();
+      window.couchPartyLauncher?.selectMenu(games[selected].dataset.game);
     }
 
     games.forEach((game, index) => {
-      game.addEventListener('focus', () => { selected = index; });
+      game.addEventListener('focus', () => {
+        selected = index;
+        window.couchPartyLauncher?.selectMenu(game.dataset.game);
+      });
     });
 
     const directions = {ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1};
     document.addEventListener('keydown', (event) => {
-      if (phoneRoom.open || event.target.closest?.('button')) return;
+      if (dialogOpen() || event.target.closest?.('button')) return;
       if (!Object.hasOwn(directions, event.key) || event.altKey || event.metaKey || event.ctrlKey) return;
       event.preventDefault();
       select(selected + directions[event.key]);
     });
 
     function pollControllers() {
-      let pads;
-      try {
-        pads = navigator.getGamepads();
-      } catch {
-        return;
-      }
+      let physical = [];
+      try { physical = navigator.getGamepads?.() ?? []; } catch {}
+      const pads = [...physical, ...(window.couchPartyLauncher?.menuPads() ?? [])];
 
       const currentInputs = new Map();
       for (const pad of pads) {
@@ -278,7 +302,7 @@
         const previous = previousInputs.get(pad.index);
         currentInputs.set(pad.index, {choice, confirm});
 
-        if (!document.hasFocus() || launcher.hidden || phoneRoom.open) continue;
+        if ((!pad.phone && !document.hasFocus()) || launcher.hidden || dialogOpen()) continue;
         if (choice !== null && choice !== previous?.choice) select(selected + choice);
         if (confirm && (previous ? !previous.confirm : !restoring)) {
           games[selected].click();
@@ -294,7 +318,7 @@
       if (document.activeElement === document.body) select(selected);
       previousInputs.clear();
       restoring = event.persisted || performance.getEntriesByType('navigation')[0]?.type === 'back_forward';
-      if (navigator.getGamepads) frame = requestAnimationFrame(pollControllers);
+      frame = requestAnimationFrame(pollControllers);
     });
     window.addEventListener('pagehide', () => cancelAnimationFrame(frame));
   </script>

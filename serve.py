@@ -23,6 +23,8 @@ class GameFiles(QRResponse, SimpleHTTPRequestHandler):
         route = urlsplit(self.path).path
         if route == "/joinstick-host.js":
             self.reply(self.server.joinstick_script, kind="text/javascript; charset=utf-8")
+        elif route == "/profiles.js":
+            self.reply((ROOT / "phone-controllers/public/phone/profiles.js").read_bytes(), kind="text/javascript; charset=utf-8")
         elif route.startswith("/qr/host") and not self.local_qr_request():
             self.reply({}, 404)
         elif route == "/qr/host":
