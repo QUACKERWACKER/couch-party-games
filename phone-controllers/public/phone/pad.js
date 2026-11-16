@@ -430,7 +430,7 @@ function installBlitzMenu() {
     blitzMenu.open = false;
   });
   blitzMenu.append(title, blitzSelect);
-  $('controls').after(blitzMenu);
+  $('hint').before(blitzMenu);
 }
 
 function updateBlitz(info) {
@@ -563,12 +563,17 @@ if (lobby && /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/.test(code)) {
   }
   if (gameKey === 'blitz') {
     installBlitzMenu();
-    $('controls').addEventListener('contextmenu', event => event.preventDefault());
     for (const [number] of game.actions) blitzAction(number, number === 0 ? 'Join' : null);
     setInterval(() => { if (!document.hidden) blitzActivity(true); }, 400);
   }
   $('retry').onclick = () => location.reload();
   $('leave').onclick = () => { neutral(); if (gameKey === 'ringout') pad.send({leave:true}); if (gameKey === 'bedrock') pad.send({bedrock: {leave: true}}); if (gameKey === 'blitz') pad.send({blitzLeave: true}); pad.leave(); };
+  const surface = document.querySelector('main');
+  for (const name of ['contextmenu', 'dragstart', 'selectstart']) {
+    surface.addEventListener(name, event => {
+      if (!event.target.closest('select')) event.preventDefault();
+    });
+  }
   addEventListener('blur', neutral);
   portrait.addEventListener('change', neutral);
   function suspendControls() {

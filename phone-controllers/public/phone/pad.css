@@ -14,7 +14,6 @@
 [hidden] { display: none !important; }
 body { margin: 0; background: var(--base); }
 .controller-viewport {
-  --pad-width: 100vw;
   --pad-height: 100vh;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
@@ -41,7 +40,7 @@ body { margin: 0; background: var(--base); }
   }
 }
 @supports (height: 100dvh) {
-  .controller-viewport { --pad-width: 100dvw; --pad-height: 100dvh; }
+  .controller-viewport { --pad-height: 100dvh; }
   @media (orientation: portrait) {
     body[data-game] .controller-viewport { --pad-width: 100dvh; --pad-height: 100dvw; }
   }
@@ -59,6 +58,24 @@ main {
   display: grid;
   align-content: center;
   gap: clamp(10px, calc(var(--pad-height) * .03), 26px);
+}
+body[data-game] main {
+  min-height: max(var(--pad-height), 18rem);
+  grid-template-rows: 48px minmax(0, 1fr) 44px;
+  align-content: stretch;
+  gap: 4px;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+body[data-game] #retry { grid-area: 2 / 1; place-self: center; }
+.controller-footer {
+  grid-area: 3 / 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
 }
 header, .utilities { display: flex; align-items: center; gap: 10px; }
 header { justify-content: space-between; flex-wrap: wrap; }
@@ -80,43 +97,62 @@ button {
 }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 #controls {
-  --face-size: clamp(56px, calc(var(--pad-height) * .195), 90px);
-  --face-spacing: calc(var(--face-size) * .79);
-  display: flex;
+  --face-size: clamp(50px, calc(var(--pad-height) * .174), 84px);
+  --face-spacing: calc(var(--face-size) * .81);
+  grid-area: 2 / 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: center;
-  justify-content: center;
-  gap: clamp(8px, calc(var(--pad-width) * .03), 28px);
+  justify-items: center;
+  column-gap: 8px;
   touch-action: none;
-  user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
-#actions { display: grid; order: 2; justify-items: center; gap: 8px; min-width: 0; }
-#controls:has(#movement:not([hidden])) #actions { flex: 1 1 0; }
-#controls:has(#aim:not([hidden])) #actions { flex: 0 0 auto; }
-#face-buttons, #utility-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+body[data-game="ringout"] #controls { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+body[data-game="track"] #controls { grid-template-columns: minmax(0, 1fr); }
+#movement { grid-area: 1 / 1; }
+#aim { grid-area: 1 / 2; }
+#actions {
+  grid-area: 1 / -2;
+  justify-self: stretch;
+  display: grid;
+  grid-template-rows: calc(var(--face-spacing) * 2 + var(--face-size)) 44px;
+  justify-items: center;
+  gap: 6px;
+  min-width: 0;
 }
-#face-buttons:has(> .action:nth-child(4 of :not([hidden]))) {
+#face-buttons {
   display: grid;
   grid-template: repeat(2, var(--face-spacing)) var(--face-size)
     / repeat(2, var(--face-spacing)) var(--face-size);
-  gap: 0;
+  position: relative;
+  isolation: isolate;
 }
-#face-buttons:has(> .action:nth-child(4 of :not([hidden]))) [data-action="0"] { grid-area: 3 / 2; }
-#face-buttons:has(> .action:nth-child(4 of :not([hidden]))) [data-action="1"] { grid-area: 2 / 3; }
-#face-buttons:has(> .action:nth-child(4 of :not([hidden]))) [data-action="2"] { grid-area: 2 / 1; }
-#face-buttons:has(> .action:nth-child(4 of :not([hidden]))) [data-action="3"] { grid-area: 1 / 2; }
-#face-buttons:not(:has(> .action:not([hidden]))),
-#utility-buttons:not(:has(> .action:not([hidden]))),
-#actions:not(:has(.action:not([hidden]))) { display: none; }
-#face-buttons [data-action="0"] { --face-color: #a7efad; }
-#face-buttons [data-action="1"] { --face-color: #ffaca8; order: 1; }
-#face-buttons [data-action="2"] { --face-color: #aad5ff; order: -2; }
-#face-buttons [data-action="3"] { --face-color: #ffdb86; order: -1; }
+#face-buttons:has(.action:not([hidden]))::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 50% auto auto 50%;
+  width: calc(var(--face-spacing) * 1.7);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border: 1px solid var(--edge);
+  border-radius: 16%;
+  background: var(--panel);
+  pointer-events: none;
+}
+#face-buttons [data-action="0"] { grid-area: 3 / 2; --face-color: #a7efad; }
+#face-buttons [data-action="1"] { grid-area: 2 / 3; --face-color: #ffaca8; }
+#face-buttons [data-action="2"] { grid-area: 2 / 1; --face-color: #aad5ff; }
+#face-buttons [data-action="3"] { grid-area: 1 / 2; --face-color: #ffdb86; }
+#utility-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: min(100%, 13rem);
+  gap: 6px;
+}
+#utility-buttons [data-action="5"] { grid-area: 1 / 1; }
+#utility-buttons :is([data-action="7"], [data-action="9"]) { grid-area: 1 / 2; }
 #face-buttons .action {
   width: var(--face-size);
   height: var(--face-size);
@@ -130,17 +166,13 @@ button {
   background: var(--panel);
   background: color-mix(in srgb, var(--face-color) 13%, var(--panel));
   box-shadow: inset 0 -3px 0 #0004;
-  font-size: clamp(.72rem, 2.7vmin, 1rem);
+  font-size: clamp(.68rem, 2.6vmin, .96rem);
   line-height: 1.05;
   text-align: center;
 }
 .face-letter { color: var(--face-color); font-size: .7rem; line-height: 1; }
 .action-label { min-width: 0; max-width: 100%; overflow-wrap: anywhere; text-wrap: balance; }
-#face-buttons:not(:has(> .action:nth-child(4 of :not([hidden])))) .action {
-  width: max(var(--face-size), 64px);
-  height: max(var(--face-size), 64px);
-}
-#utility-buttons .action { border-radius: 999px; font-size: .8rem; }
+#utility-buttons .action { border-radius: 999px; font-size: .75rem; padding: 4px; line-height: 1.12; }
 #controls .action.primary {
   --primary-color: var(--face-color, var(--accent));
   color: #141b22;
@@ -149,7 +181,7 @@ button {
 }
 #controls .action:is(.held, :active) { color: #141b22; background: #fff; border-color: #fff; box-shadow: none; }
 .action:is(.primary, .held, :active) .face-letter { color: currentColor; }
-.stick-group { display: grid; justify-items: center; gap: 6px; }
+.stick-group { display: grid; width: 100%; justify-items: center; gap: 6px; }
 .stick-group b { font-size: .85rem; color: var(--muted); }
 .stick {
   --x: 0px;
@@ -175,18 +207,14 @@ button {
   transform: translate(var(--x), var(--y));
   pointer-events: none;
 }
-#movement, #aim { flex: 1 1 0; min-width: 0; }
-#aim { order: 1; }
-#controls:not(:has(.action:not([hidden]))) { justify-content: center; }
-#controls:not(:has(.action:not([hidden]))):not(:has(.stick-group:not([hidden]))) { display: none; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 body[data-game="track"] { --base: #21192b; --panel: #3c2c48; --edge: #786080; --accent: #d4fa87; }
-[data-game="blitz"] #controls { -webkit-touch-callout: none; }
 [data-game="bedrock"] #controls:has(.bedrock-picker:not([hidden])) #actions { display: none; }
 [data-game="bedrock"] .bedrock-picker {
-  flex: 1 1 0;
-  order: 2;
-  min-width: 0;
+  grid-area: 1 / -2;
+  width: min(100%, 17rem);
+  max-height: 100%;
+  overflow: auto;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
@@ -194,11 +222,13 @@ body[data-game="track"] { --base: #21192b; --panel: #3c2c48; --edge: #786080; --
 .bedrock-picker b, .bedrock-picker button:last-child { grid-column: 1 / -1; }
 .bedrock-picker button { font-size: .78rem; overflow-wrap: anywhere; }
 .bedrock-picker button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
-@media (orientation: landscape) and (max-height: 360px),
-       (orientation: portrait) and (max-width: 360px) {
-  main { gap: 8px; }
-  #actions { gap: 6px; }
+#blitz-playbook { position: relative; flex: 0 0 auto; padding: 0 10px; border: 1px solid var(--edge); border-radius: 9px; background: var(--panel); }
+#blitz-playbook summary { min-height: 44px; align-content: center; cursor: pointer; color: var(--accent); }
+#blitz-playbook select {
+  position: absolute;
+  z-index: 2;
+  inset: auto auto calc(100% + 6px) 0;
+  min-width: 100%;
+  min-height: 44px;
+  font: inherit;
 }
-#blitz-playbook { padding: 9px 12px; border: 1px solid var(--edge); border-radius: 9px; background: var(--panel); }
-#blitz-playbook summary { min-height: 32px; padding-block: 5px; cursor: pointer; color: var(--accent); }
-#blitz-playbook select { width: 100%; min-height: 44px; font: inherit; margin-top: 6px; }
