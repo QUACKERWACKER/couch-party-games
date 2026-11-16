@@ -22,7 +22,7 @@ NOINDEX = '<head>\n<meta name="robots" content="noindex">'
 
 def build(output, relay):
     output.mkdir(parents=True)
-    for folder, assets in {"": "", **PAGES}.items():
+    for folder, assets in {"": "grid-navigation.js", **PAGES}.items():
         destination = output / folder
         destination.mkdir(parents=True, exist_ok=True)
         html = (ROOT / folder / "index.html").read_text()
@@ -32,6 +32,7 @@ def build(output, relay):
         else:
             parent = "../" * len(Path(folder).parts)
             html = html.replace('src="/joinstick-host.js"', f'src="{parent}joinstick-host.js"')
+            html = html.replace('src="/grid-navigation.js"', f'src="{parent}grid-navigation.js"')
             html = html.replace('href="/"', f'href="{parent}"')
         if folder == "Blitz 7/game":
             html = html.replace('<script src="qr-host.js" defer></script>\n', '')

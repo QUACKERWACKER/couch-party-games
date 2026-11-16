@@ -148,7 +148,7 @@ function menuAction() {
   }
   assignPlayers();
   for (const p of players) p.cpu = null;
-  draft = {pool: createProspects(), side: 0, index: 0, direction: 0};
+  draft = {pool: createProspects(), side: 0, index: 0, direction: null};
   const captain = humans()[0];
   nextDraftPick(captain?.side ?? 0);
 }
@@ -177,7 +177,7 @@ function nextDraftPick(preferred) {
   if (picking !== undefined) {
     draft.side = picking;
     draft.index = 0;
-    draft.direction = 0;
+    draft.direction = null;
     mode = 'draft';
     overlay('CPU DRAFT', `P${draftCaptain(picking).number} picks for ${names[picking]}`, '');
     renderDraft();
@@ -204,8 +204,10 @@ function pickCPU(index) {
 }
 
 function browseDraft(direction) {
-  const length = draft.pool.length;
-  draft.index = (draft.index + direction + length) % length;
+  const cards = [...$('draft-pool').children];
+  const next = couchGrid.next(cards, draft.index, direction);
+  if (next === draft.index) return;
+  draft.index = next;
   updateDraftSelection();
 }
 
@@ -361,8 +363,7 @@ function readInputs() {
       }
     } else if (mode === 'draft') {
       if (profile !== draftCaptain(draft.side)) continue;
-      const axis = Math.abs(state.x) > Math.abs(state.y) ? state.x : state.y;
-      const direction = Math.abs(axis) > .55 ? Math.sign(axis) : 0;
+      const direction = couchGrid.direction(state.x, state.y);
       if (direction && direction !== draft.direction) browseDraft(direction);
       draft.direction = direction;
       if (state.press[0]) pickCPU(draft.index);

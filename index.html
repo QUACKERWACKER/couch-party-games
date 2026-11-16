@@ -164,6 +164,7 @@
       </a>
     </nav>
   </main>
+  <script src="./grid-navigation.js" defer></script>
   <script src="./profiles.js" defer></script>
   <script src="./joinstick-host.js" defer></script>
   <script>
@@ -175,7 +176,7 @@
     let restoring = false;
 
     function select(index) {
-      selected = (index + games.length) % games.length;
+      selected = index;
       games[selected].focus();
       window.couchPartyLauncher?.selectMenu(games[selected].dataset.game);
     }
@@ -187,12 +188,14 @@
       });
     });
 
-    const directions = {ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1};
+    const directions = {ArrowLeft: 'left', ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down'};
     document.addEventListener('keydown', (event) => {
-      if (event.target.closest?.('#phone-room')) return;
+      if (!event.target.closest?.('nav')) return;
       if (!Object.hasOwn(directions, event.key) || event.altKey || event.metaKey || event.ctrlKey) return;
+      const next = couchGrid.next(games, selected, directions[event.key]);
+      if (next === selected) return;
       event.preventDefault();
-      select(selected + directions[event.key]);
+      select(next);
     });
 
     function pollControllers() {
@@ -201,12 +204,15 @@
       const currentInputs = new Map();
       for (const pad of pads) {
         const {index, x, y, confirm} = pad;
-        const choice = x < -.55 || y < -.55 ? -1 : x > .55 || y > .55 ? 1 : null;
+        const choice = couchGrid.direction(x, y);
         const previous = previousInputs.get(index);
         currentInputs.set(index, {choice, confirm});
 
         if (launcher.hidden) continue;
-        if (choice !== null && choice !== previous?.choice) select(selected + choice);
+        if (choice && choice !== previous?.choice) {
+          const next = couchGrid.next(games, selected, choice);
+          if (next !== selected) select(next);
+        }
         if (confirm && (previous ? !previous.confirm : !restoring)) {
           games[selected].click();
           break;
