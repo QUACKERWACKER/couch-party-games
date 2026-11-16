@@ -18,7 +18,7 @@ const games = {
   bedrock: {
     title: 'Bedrock Rivals', move: 'Move / aim', actions: [
       [5, 'Pick minion'], [7, 'Pick upgrade'], [2, 'Summon'], [3, 'Upgrade'], [0, 'Join'], [1, 'Leave'],
-    ], hint: 'Tap Join to claim a player. Hold a picker and point the stick to choose.',
+    ], hint: 'Tap Join to claim a player. Tap a picker to choose equipment.',
   },
   ringout: {
     title: 'Ringout', move: 'Move', aim: true, actions: [
@@ -152,13 +152,20 @@ function setAction(action, held) {
   publish();
 }
 
+function setActionLabel(action, label) {
+  if (label) action.element.textContent = label;
+  action.element.dataset.inactive = String(!label);
+  action.element.hidden = !label && !action.held;
+  action.element.setAttribute('aria-disabled', String(!label));
+}
+
 function installAction(number, label) {
   const element = document.createElement('button');
   element.type = 'button';
   element.dataset.action = number;
   element.className = number === 0 ? 'action primary' : 'action';
   element.textContent = label;
-  $('actions').append(element);
+  $(number < 4 ? 'face-buttons' : 'utility-buttons').append(element);
   const action = {element, pointer: null, held: false, keyboard: false, clickTimer: 0};
   actions.set(number, action);
   element.addEventListener('pointerdown', event => {
@@ -300,8 +307,7 @@ function updateBedrock(info) {
        1: hasSeat ? 'Leave seat' : null, 2: info?.host && inLobby ? 'Match size' : null};
   for (const [number, action] of actions) {
     const label = labels[number];
-    action.element.hidden = !label;
-    if (label) action.element.textContent = label;
+    setActionLabel(action, label);
     action.local = playing && number === 5 ? 'minion' : playing && number === 7 ? 'upgrade' : null;
   }
   $('movement').hidden = !playing;
@@ -327,6 +333,7 @@ function roomStatus(status) {
   clearInterval(trackPulseTimer);
   if (connected) {
     $('player').textContent = 'Phone ' + pad.slot;
+    if (gameKey === 'ringout') updateRingout();
     if (gameKey === 'track') {
       updateTrack();
       const pulse = () => {
@@ -364,9 +371,7 @@ function updateTrack(info) {
   for (const [number, action] of actions) {
     const label = labels[number];
     // Keep a captured button visible until its finger lifts, even when the stage changes.
-    if (label) action.element.textContent = label;
-    action.element.hidden = !label && !action.held;
-    action.element.dataset.inactive = !label;
+    setActionLabel(action, label);
   }
   $('player').textContent = info?.player ?? 'Phone ' + pad.slot;
   $('status').textContent = info?.team ?? 'Connected';
@@ -374,10 +379,7 @@ function updateTrack(info) {
 }
 
 function blitzAction(number, label) {
-  const action = actions.get(number);
-  action.inactive = !label;
-  action.element.textContent = label || '—';
-  action.element.setAttribute('aria-disabled', String(action.inactive));
+  setActionLabel(actions.get(number), label);
 }
 
 function installBlitzMenu() {
@@ -436,23 +438,28 @@ function publishRingoutHeartbeat() {
 }
 
 function updateRingout(info) {
-  if (!info) return;
-  for (const [number, action] of actions) {
-    const label = info.buttons[number];
-    action.element.hidden = !label;
-    if (label) action.element.textContent = label;
-    action.element.classList.toggle('primary', number === info.primary);
+  const buttons = info?.buttons ?? {0: 'Join'};
+  const aim = sticks.aim;
+  $('aim').hidden = buttons[2] !== 'Push';
+  if ($('aim').hidden && (aim.x || aim.y || aim.pointer !== null)) {
+    aim.pointer = null;
+    aim.keys.clear();
+    setStick(aim, 0, 0);
+    publish();
   }
-  $('player').textContent = info.player || 'Phone ' + pad.slot;
-  $('hint').textContent = info.hint;
+  for (const [number, action] of actions) {
+    setActionLabel(action, buttons[number]);
+    action.element.classList.toggle('primary', number === (info?.primary ?? 0));
+  }
+  $('player').textContent = info?.player || 'Phone ' + pad.slot;
+  $('hint').textContent = info?.hint ?? game.hint;
 }
 
 function updateHoops(info) {
   const view = hoopsModes[info?.mode] || hoopsModes.join;
   for (const [number, action] of actions) {
     const label = view.labels[number];
-    action.element.textContent = label || '—';
-    action.element.setAttribute('aria-disabled', String(!label || label === 'Joined'));
+    setActionLabel(action, label === 'Joined' ? null : label);
   }
   $('move-label').textContent = view.move || game.move;
   $('player').textContent = info?.player || 'Phone ' + pad.slot;
@@ -499,9 +506,11 @@ if (game && /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/.test(code)) {
     installStick(document.querySelector('[data-stick="move"]'));
   }
   $('hint').textContent = game.hint;
-  $('aim').hidden = !game.aim;
+  $('aim').hidden = true;
   if (game.aim) installStick(document.querySelector('[data-stick="aim"]'));
-  for (const [number, label] of game.actions) installAction(number, label);
+  for (const [number, label] of [...game.actions].sort(([a], [b]) => a - b)) {
+    installAction(number, label);
+  }
   if (gameKey === 'blitz') {
     installBlitzMenu();
     $('controls').addEventListener('contextmenu', event => event.preventDefault());

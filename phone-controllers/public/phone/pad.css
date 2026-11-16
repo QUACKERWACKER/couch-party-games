@@ -47,24 +47,53 @@ button {
 }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 #controls {
-  display: grid;
-  grid-template-columns: minmax(100px, 1fr) minmax(0, 1.3fr);
+  --face-size: clamp(46px, 18vmin, 86px);
+  display: flex;
   align-items: center;
-  gap: clamp(10px, 3vw, 28px);
+  justify-content: center;
+  gap: clamp(8px, 3vw, 28px);
   touch-action: none;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
-#actions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+#actions { display: grid; order: 2; justify-items: center; gap: 12px; min-width: 0; }
+#controls:has(#movement:not([hidden])) #actions { flex: 1 1 0; }
+#controls:has(#aim:not([hidden])) #actions { flex: 0 0 auto; }
+#face-buttons, #utility-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
 }
-.action {
-  min-height: clamp(44px, 15vh, 76px);
-  font-size: clamp(.75rem, 2.6vmin, 1.03rem);
+#face-buttons:has(> .action:nth-child(4 of :not([hidden]))) {
+  display: grid;
+  grid-template: repeat(2, calc(var(--face-size) * .76)) var(--face-size)
+    / repeat(2, calc(var(--face-size) * .76)) var(--face-size);
+  gap: 0;
+}
+#face-buttons:has(> .action:nth-child(4 of :not([hidden]))) [data-action="0"] { grid-area: 3 / 2; }
+#face-buttons:has(> .action:nth-child(4 of :not([hidden]))) [data-action="1"] { grid-area: 2 / 3; }
+#face-buttons:has(> .action:nth-child(4 of :not([hidden]))) [data-action="2"] { grid-area: 2 / 1; }
+#face-buttons:has(> .action:nth-child(4 of :not([hidden]))) [data-action="3"] { grid-area: 1 / 2; }
+#face-buttons:not(:has(> .action:not([hidden]))),
+#utility-buttons:not(:has(> .action:not([hidden]))),
+#actions:not(:has(.action:not([hidden]))) { display: none; }
+#face-buttons .action {
+  width: var(--face-size);
+  min-height: var(--face-size);
+  aspect-ratio: 1;
+  padding: 4px;
+  border-radius: 50%;
+  font-size: clamp(.7rem, 2.5vmin, .95rem);
+  line-height: 1.1;
   overflow-wrap: anywhere;
 }
+#face-buttons:not(:has(> .action:nth-child(4 of :not([hidden])))) .action {
+  width: max(var(--face-size), 60px);
+  min-height: max(var(--face-size), 60px);
+}
+#utility-buttons .action { border-radius: 999px; font-size: .78rem; }
 .action.primary { color: var(--base); border-color: var(--accent); background: var(--accent); }
 .action.held { color: var(--base); background: #fff; border-color: #fff; }
 .stick-group { display: grid; justify-items: center; gap: 6px; }
@@ -93,86 +122,35 @@ button {
   transform: translate(var(--x), var(--y));
   pointer-events: none;
 }
-[data-game="ringout"] #controls { grid-template-columns: minmax(80px, 1fr) minmax(0, 1.5fr) minmax(80px, 1fr); }
+#movement, #aim { flex: 1 1 0; min-width: 0; }
+#aim { order: 1; }
+#controls:not(:has(.action:not([hidden]))) { justify-content: center; }
+#controls:not(:has(.action:not([hidden]))):not(:has(.stick-group:not([hidden]))) { display: none; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-@media (orientation: portrait) {
-  #controls { grid-template-columns: minmax(80px, .9fr) minmax(0, 1.1fr); gap: 10px; }
-  #actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .stick { width: min(100%, 33vw, 170px); }
-  .action { min-height: clamp(44px, 9vh, 72px); }
-  [data-game="ringout"] #controls { grid-template: "move aim" auto "buttons buttons" auto / 1fr 1fr; }
-  [data-game="ringout"] #movement { grid-area: move; }
-  [data-game="ringout"] #aim { grid-area: aim; }
-  [data-game="ringout"] #actions { grid-area: buttons; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-
 body[data-game="track"] { --base: #21192b; --panel: #3c2c48; --edge: #786080; --accent: #d4fa87; }
-[data-game="track"] #controls { display: block; }
-[data-game="track"] #actions {
-  grid-template-areas: "stride turbo" "event trick" "team start";
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  max-width: 34rem;
-  margin-inline: auto;
-}
-[data-game="track"] .action { font-size: clamp(.95rem, 4vmin, 1.2rem); }
-[data-game="track"] [data-action="0"] { grid-area: stride; }
-[data-game="track"] [data-action="1"] { grid-area: turbo; }
-[data-game="track"] [data-action="2"] { grid-area: trick; }
-[data-game="track"] [data-action="3"] { grid-area: event; }
-[data-game="track"] [data-action="5"] { grid-area: team; }
-[data-game="track"] [data-action="9"] { grid-area: start; }
-
-[data-game="ringout"] .action[hidden] { display: none; }
-[data-game="ringout"] .action[data-action="2"]:not([hidden]) { grid-column: span 2; }
-
-[data-game="hoops"] #actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-[data-game="hoops"] .action[data-action="0"] { order: 4; grid-column: 1 / -1; }
-[data-game="hoops"] .action[data-action="3"] { order: 2; }
-[data-game="hoops"] .action[data-action="1"] { order: 3; }
-[data-game="hoops"] .action[data-action="2"] { order: 5; grid-column: 1 / -1; }
-[data-game="hoops"] .action[data-action="5"], [data-game="hoops"] .action[data-action="9"] {
-  min-height: 44px;
-  order: 1;
-}
-[data-game="hoops"] .action[aria-disabled="true"] { opacity: .35; }
-
-[data-game="bedrock"] #controls { position: relative; }
-[data-game="bedrock"] #controls[data-phase="lobby"] { grid-template-columns: 1fr; }
-[data-game="bedrock"] #actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-[data-game="bedrock"] #actions [data-action="0"],
-[data-game="bedrock"] #actions [data-action="1"] {
-  min-height: clamp(56px, 17vh, 90px);
-  font-size: 1rem;
-}
-[data-game="bedrock"] #controls[data-phase="play"] [data-action="1"]:not(.held) {
-  background: #ffad8c; color: var(--base); border-color: #ffad8c;
-}
+[data-game="blitz"] #controls { -webkit-touch-callout: none; }
+[data-game="bedrock"] #controls:has(.bedrock-picker:not([hidden])) #actions { display: none; }
 [data-game="bedrock"] .bedrock-picker {
-  position: absolute;
-  inset: 0 0 0 auto;
-  width: calc((100% - clamp(10px, 3vw, 28px)) * .5652);
+  flex: 1 1 0;
+  order: 2;
+  min-width: 0;
   display: grid;
-  align-content: center;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
-  padding: 6px;
-  background: var(--base);
 }
 .bedrock-picker b, .bedrock-picker button:last-child { grid-column: 1 / -1; }
 .bedrock-picker button { font-size: .78rem; overflow-wrap: anywhere; }
 .bedrock-picker button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 @media (orientation: portrait) {
-  [data-game="bedrock"] .bedrock-picker { width: calc((100% - 10px) * .55); }
+  #controls { gap: 10px; }
+  .stick { width: min(100%, 33vw, 170px); }
+  #controls:has(#aim:not([hidden])) { flex-wrap: wrap; }
+  #controls:has(#aim:not([hidden])) #actions { flex-basis: 100%; }
 }
-
-/* Blitz keeps the main actions under the right thumb in either orientation. */
-[data-game="blitz"] #controls { -webkit-touch-callout: none; }
-[data-game="blitz"] #actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-[data-game="blitz"] [data-control="0"] { grid-column: 1 / -1; }
-[data-game="blitz"] [data-control="5"], [data-game="blitz"] [data-control="9"] {
-  grid-row: 4; min-height: 44px; font-size: .75rem;
+@media (orientation: landscape) and (max-height: 360px) {
+  main { gap: 8px; }
+  #actions { gap: 6px; }
 }
-[data-game="blitz"] .action[aria-disabled="true"] { opacity: .37; cursor: default; }
 #blitz-playbook { padding: 9px 12px; border: 1px solid var(--edge); border-radius: 9px; background: var(--panel); }
 #blitz-playbook summary { min-height: 32px; padding-block: 5px; cursor: pointer; color: var(--accent); }
 #blitz-playbook select { width: 100%; min-height: 44px; font: inherit; margin-top: 6px; }
