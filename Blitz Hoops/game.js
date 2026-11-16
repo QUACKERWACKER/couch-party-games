@@ -21,6 +21,9 @@ const maxCharge = 1.25;
 const possessionTime = 12;
 const periodTime = 28;
 const injuryReplayTime = 1.65;
+const recoveryPreview = 1.6;
+const recoveryWindow = 4.5;
+const recoveryActions = [[0, 'ICE'], [1, 'TAPE'], [3, 'STRETCH']];
 const freeThrowStart = .35;
 const freeThrowSpeed = 1.17;
 const freeThrowWindow = .065;
@@ -40,8 +43,6 @@ const lastNames = ['Banks', 'Cross', 'Fox', 'Grant', 'King', 'Knight', 'Lane', '
 const attributes = ['Speed', 'Shooting', 'Finishing', 'Defense', 'Passing'];
 const controls = new Map();
 const pads = new Map();
-const keys = new Set();
-const keyboard = {side: 0, enabled: true};
 const empty = {x: 0, y: 0, down: [], press: [], release: []};
 const players = Array.from({length: 6}, (_, i) => ({side: Math.floor(i / 3), slot: i % 3}));
 const score = [0, 0];
@@ -54,7 +55,7 @@ const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
 let sequence, draft, periodResult, replaySample = 0;
 let mode = 'lobby', quarter = 1, time = periodTime, shotClock = possessionTime, side = 0;
 let difficulty = 1, possessionAge = 0, inbound = 0, callTime = 0;
-let owner, flight, loose, assist, previousKeys = [], audio;
+let owner, flight, loose, assist, audio;
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -65,7 +66,7 @@ function isThree(p) {
   const width = Math.abs(p.y - center);
   return width >= 188 || depth >= Math.sqrt(three * three - width * width);
 }
-const humans = () => [...(keyboard.enabled ? [keyboard] : []), ...pads.values()];
+const humans = () => [...pads.values()];
 const nearest = (point, candidates) => candidates.reduce((best, p) =>
   !best || distance(p, point) < distance(best, point) ? p : best, null);
 
@@ -122,12 +123,10 @@ function assignPlayers() {
     const slot = team(human.side).find(p => !p.human);
     if (slot) {
       slot.human = human;
-      if (human.phone) slot.phoneSeat = human;
+      slot.phoneSeat = human;
     }
   });
-  $('roster').textContent = humans().map(p => `${p.identity?.name || `P${p.number}`} · ${names[p.side]}${p.phone ? p.online ? ' · PHONE' : ' · PHONE OFFLINE' : ''}`).join('  /  ') || 'CPU exhibition';
-  $('team').textContent = names[keyboard.side] + ' ↔';
-  $('team').disabled = !keyboard.enabled;
+  $('roster').textContent = humans().map(p => `${p.identity?.name || `P${p.number}`} · ${names[p.side]}${p.online ? '' : ' · OFFLINE'}`).join('  /  ') || 'CPU exhibition';
 }
 
 function switchSide(human) {
@@ -145,7 +144,7 @@ function menuAction() {
     return;
   }
   for (const [index, profile] of pads) {
-    if (profile.phone && !profile.online) pads.delete(index);
+    if (!profile.online) pads.delete(index);
   }
   assignPlayers();
   for (const p of players) p.cpu = null;
@@ -308,31 +307,15 @@ function togglePause() {
 
 function readInputs() {
   controls.clear();
-  const down = ['KeyJ', 'KeyK', 'KeyL', 'KeyI'].map(code => keys.has(code));
-  if (keyboard.enabled) {
-    controls.set(keyboard, input(
-      +(keys.has('KeyD') || keys.has('ArrowRight')) - +(keys.has('KeyA') || keys.has('ArrowLeft')),
-      +(keys.has('KeyS') || keys.has('ArrowDown')) - +(keys.has('KeyW') || keys.has('ArrowUp')),
-      down, previousKeys
-    ));
-  }
-  previousKeys = down;
-  let gamepads = [];
-  try {
-    gamepads = Array.from(navigator.getGamepads?.() || []);
-  } catch {
-    if (!window.couchJoinstick) return;
-  }
-  gamepads.push(...(window.couchJoinstick?.sample() || []));
+  const phones = window.couchJoinstick?.sample() || [];
   const seen = new Set();
   const now = performance.now();
-  for (const pad of gamepads) {
-    if (!pad?.connected || pad.mapping !== 'standard') continue;
+  for (const pad of phones) {
+    if (!pad?.connected || pad.source !== 'joinstick') continue;
     seen.add(pad.index);
     let profile = pads.get(pad.index);
     const buttons = [0, 1, 2, 3, 5, 9].map(i => !!pad.buttons[i]?.pressed);
-    const pressed = i => !!pad.buttons[i]?.pressed;
-    if (profile?.phone && !profile.online) {
+    if (profile && !profile.online) {
       profile.online = true;
       profile.last = buttons;
       if (mode === 'lobby' || mode === 'end') assignPlayers();
@@ -350,7 +333,7 @@ function readInputs() {
       const red = humans().filter(p => !p.side).length;
       const blue = humans().length - red;
       if (red + blue < 6) {
-        profile = {side: red <= blue ? 0 : 1, last: buttons, phone: pad.source === 'joinstick', online: true,
+        profile = {side: red <= blue ? 0 : 1, last: buttons, online: true,
           identity: window.couchJoinstick?.profile?.(pad.index)};
         pads.set(pad.index, profile);
         assignPlayers();
@@ -366,11 +349,7 @@ function readInputs() {
       profile.last = buttons;
       continue;
     }
-    const state = input(
-      (pressed(15) ? 1 : pressed(14) ? -1 : pad.axes[0]) || 0,
-      (pressed(13) ? 1 : pressed(12) ? -1 : pad.axes[1]) || 0,
-      buttons, profile.last
-    );
+    const state = input(pad.axes[0] || 0, pad.axes[1] || 0, buttons, profile.last);
     profile.last = buttons;
     controls.set(profile, state);
     if (mode === 'lobby' || mode === 'end') {
@@ -395,7 +374,7 @@ function readInputs() {
   for (const [index, profile] of pads) {
     if (seen.has(index)) continue;
     const activeMatch = mode !== 'lobby' && mode !== 'end';
-    const reserved = profile.phone && window.couchJoinstick?.reserved?.(index) !== false;
+    const reserved = window.couchJoinstick?.reserved?.(index) !== false;
     const retain = reserved && (activeMatch || profile.online || now - profile.lostAt < 60_000);
     if (retain && !profile.online) continue;
     if (retain) {
@@ -420,14 +399,15 @@ function describePhoneControls() {
   const inLobby = mode === 'lobby' || mode === 'end';
   const labels = {_default: {mode: inLobby ? humans().length < 6 ? 'join' : 'full' : 'wait'}};
   for (const [index, profile] of pads) {
-    if (!profile.phone) continue;
     const player = players.find(p => p.human === profile);
     let phase = 'stoppage';
     if (inLobby) phase = 'lobby';
     else if (mode === 'draft') phase = profile === draftCaptain(draft.side) ? 'draft' : 'draftWait';
     else if (mode === 'pause') phase = 'paused';
     else if (sequence?.kind === 'halftime') phase = 'halftime';
-    else if (sequence?.kind === 'free-throw') {
+    else if (sequence?.kind === 'recovery') {
+      phase = sequence.player === player ? (sequence.age < recoveryPreview ? 'recoveryPreview' : 'recovery') : 'recoveryWait';
+    } else if (sequence?.kind === 'free-throw') {
       phase = sequence.shooter === player && sequence.result === null ? 'freeThrow' : 'freeThrowWait';
     } else if (!sequence && !inbound) {
       if (owner === player && player) phase = 'ball';
@@ -435,6 +415,7 @@ function describePhoneControls() {
       else phase = player?.side === side ? 'offense' : 'defense';
     }
     labels[index] = {player: profile.identity?.name || `P${profile.number}`, team: names[profile.side], mode: phase};
+    if (phase === 'recovery') labels[index].progress = sequence.step;
   }
   return labels;
 }
@@ -968,13 +949,17 @@ function advanceSequence(dt) {
     advanceFreeThrow(active);
     return;
   }
+  if (active.kind === 'recovery') {
+    advanceRecovery(active);
+    return;
+  }
   if (active.age < active.duration) return;
   sequence = null;
   if (active.kind === 'period-break' || (active.kind === 'replay' && active.atHorn)) {
     nextPeriod();
   } else if (active.kind === 'injury') {
-    call('PLAY ON', .65);
-    tone([555, 740]);
+    if (active.player.human?.online) startRecovery(active.player);
+    else finishRecovery();
   } else if (active.kind === 'violation') {
     $('status').textContent = names[side] + ' POSSESSION';
   } else if (active.kind === 'replay') {
@@ -987,6 +972,44 @@ function advanceSequence(dt) {
     layout(active.shooter.side);
     shotClock = Math.max(7, active.clock);
     $('status').textContent = names[side] + ' POSSESSION';
+  }
+}
+
+function startRecovery(player) {
+  const order = [...recoveryActions];
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  sequence = {kind: 'recovery', player, order, age: 0, step: 0, mistakeUntil: 0};
+  call(`${player.statsLabel} · INJURY RECOVERY`, 1);
+}
+
+function finishRecovery(completed = 0) {
+  sequence = null;
+  call(completed ? `PLAY ON · RECOVERY ${completed}/3` : 'PLAY ON', .85);
+  tone([555, 740]);
+}
+
+function advanceRecovery(active) {
+  const {player, order} = active;
+  if (!player.human?.online || active.age >= recoveryPreview + recoveryWindow) {
+    finishRecovery(active.step);
+    return;
+  }
+  if (active.age < recoveryPreview) return;
+  const pressed = controls.get(player.human)?.press;
+  const tapped = recoveryActions.filter(([button]) => pressed?.[button]);
+  if (!tapped.length) return;
+  if (tapped.length === 1 && tapped[0] === order[active.step]) {
+    active.step++;
+    player.injury = Math.max(0, player.injury - 1.25);
+    if (active.step === order.length) finishRecovery(active.step);
+    else tone([430 + 100 * active.step]);
+  } else {
+    active.age += .45;
+    active.mistakeUntil = active.age + .3;
+    tone([200]);
   }
 }
 
@@ -1388,7 +1411,7 @@ function drawFreeThrow(active, now) {
   lineup.push({...shooter, x: shooterX, y: center, vx: 0, vy: 0, jump: 0, swipe: 0, charge: 0, request: 0});
   drawScene(now, {players: lineup, ref: {x: goal.x - direction * 31, y: 360}, ball});
   const hint = result === null
-    ? shooter.human ? 'PRESS SHOOT IN THE GREEN · J / A / CROSS' : 'CPU AT THE LINE'
+    ? shooter.human ? 'TAP FREE THROW IN THE GREEN' : 'CPU AT THE LINE'
     : age < .57 ? names[shooter.side] : result ? 'GOOD · +1 POINT' : 'MISSED';
   caption(`FREE THROW ${total - remaining + 1} / ${total}`, hint);
   if (result === null) {
@@ -1399,6 +1422,29 @@ function drawFreeThrow(active, now) {
     rect(ctx, '#9cfa8a', left + width * (.5 - freeThrowWindow), 164, width * 2 * freeThrowWindow, 15);
     rect(ctx, '#fff6de', left + width * needle - 2, 162, 4, 19);
   }
+}
+
+function drawRecovery(active, now) {
+  drawScene(now);
+  rect(ctx, '#1c1125e9', 0, 0, 960, 500);
+  const preview = active.age < recoveryPreview;
+  const remaining = Math.max(0, recoveryPreview + recoveryWindow - active.age);
+  lettering(ctx, `${active.player.statsLabel} · INJURY TIMEOUT`, 480, 101, 21, '#ffc267');
+  lettering(ctx, 'QUICK RECOVERY', 480, 150, 49, '#fff1d6');
+  for (const [i, [, label]] of active.order.entries()) {
+    const x = 197 + i * 192;
+    const done = i < active.step;
+    rect(ctx, done ? '#265750' : '#473049', x, 209, 182, 78);
+    lettering(ctx, preview || done ? label : '?', x + 91, 249, 27, done ? '#a3ffe8' : '#fff1d6');
+  }
+  if (!preview) {
+    rect(ctx, '#473049', 197, 309, 566, 8);
+    rect(ctx, '#ffc267', 197, 309, 566 * remaining / recoveryWindow, 8);
+  }
+  const hint = preview ? 'MEMORIZE THE ORDER' : active.age < active.mistakeUntil ? 'WRONG BUTTON · TRY AGAIN'
+    : `REPEAT IT ON YOUR PHONE · ${active.step}/3 · ${remaining.toFixed(1)}s`;
+  lettering(ctx, hint, 480, 358, 20, '#fff1d6');
+  lettering(ctx, 'EACH CORRECT TAP SHORTENS THE INJURY', 480, 400, 15, '#ffc267');
 }
 
 function draw(now) {
@@ -1419,7 +1465,8 @@ function draw(now) {
     const ruling = active.kind === 'violation' ? `${names[side]} BALL`
       : active.throws ? `${active.throws} FREE THROWS AWARDED` : 'SIDE OUT · OFFENSE KEEPS THE BALL';
     showReferee(active.clip, active.age, ruling, active.throws ? 'shooting' : 'possession');
-  } else if (active?.kind === 'free-throw') drawFreeThrow(active, now);
+  } else if (active?.kind === 'recovery') drawRecovery(active, now);
+  else if (active?.kind === 'free-throw') drawFreeThrow(active, now);
   else {
     drawScene(now);
     for (const bit of particles) rect(ctx, bit.color, bit.x, bit.y, 4, 4);
@@ -1447,50 +1494,16 @@ $('start').addEventListener('click', menuAction);
 $('draft-back').addEventListener('click', cancelDraft);
 $('pause').addEventListener('click', togglePause);
 $('skip-show').addEventListener('click', skipHalftime);
-$('team').addEventListener('click', () => switchSide(keyboard));
 $('difficulty').addEventListener('click', () => {
   difficulty = (difficulty + 1) % 3;
   $('difficulty').textContent = 'CPU · ' + ['ROOKIE', 'NORMAL', 'HARD'][difficulty];
 });
-$('keyboard').addEventListener('click', () => {
-  if (!keyboard.enabled && pads.size >= 6) return;
-  if (!keyboard.enabled && [...pads.values()].filter(p => p.side === keyboard.side).length >= 3) keyboard.side = 1 - keyboard.side;
-  keyboard.enabled = !keyboard.enabled;
-  $('keyboard').setAttribute('aria-pressed', keyboard.enabled);
-  $('keyboard').textContent = keyboard.enabled ? 'KEYBOARD' : 'KEYBOARD OFF';
-  assignPlayers();
-  layout(0);
-});
-
-const gameKeys = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyJ', 'KeyK', 'KeyL', 'KeyI',
-  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 window.addEventListener('keydown', event => {
-  if (mode === 'draft') {
-    if (event.code === 'Escape') cancelDraft();
-    if (event.code === 'Enter' && event.target?.closest?.('button')) return;
-    if (draft && draftCaptain(draft.side) === keyboard) {
-      const direction = {ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1}[event.code];
-      if (direction || event.code === 'Enter') {
-        event.preventDefault();
-        if (direction) browseDraft(direction);
-        else if (!event.repeat) pickCPU(draft.index);
-      }
-    }
-    return;
-  }
-  if (event.code === 'Enter' && mode === 'live' && sequence?.kind === 'halftime') {
-    event.preventDefault();
-    skipHalftime();
-  }
-  if (event.code === 'Escape' && !event.repeat) togglePause();
-  if (!gameKeys.has(event.code) || mode !== 'live' || !keyboard.enabled) return;
-  event.preventDefault();
-  keys.add(event.code);
+  if (event.code !== 'Escape' || event.repeat) return;
+  if (mode === 'draft') cancelDraft();
+  else togglePause();
 });
-window.addEventListener('keyup', event => keys.delete(event.code));
 window.addEventListener('blur', () => {
-  keys.clear();
-  previousKeys = [];
   if (mode === 'live') togglePause();
 });
 

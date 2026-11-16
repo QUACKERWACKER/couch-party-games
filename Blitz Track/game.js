@@ -7,6 +7,7 @@ const cpuNames = [['Frank Furter', 'Mustard Mike', 'Relish Randy', 'Bun Jovi'], 
 const byId = new Map(events.map(event => [event.id, event]));
 const players = new Map([['keyboard', {id: 'keyboard', name: 'Keyboard', team: 0}]]);
 const claims = new Map();
+const draftPresets = [quickMeet, events.map(event => event.id), []];
 const held = new Set();
 const touches = new Map();
 const previousPads = new Map();
@@ -19,6 +20,9 @@ let program = [...quickMeet];
 let connected = new Set();
 let nextPlayer = 2;
 let keyboardTeam = 0;
+let keyboardAutomatic = true;
+let draftIndex = 0;
+let draftPreset = 0;
 let scores = [0, 0];
 let results = [];
 let round = 0;
@@ -46,8 +50,25 @@ function button(label, action, pressed) {
 }
 
 function available(team) {
-  return [...players.values()].filter(player =>
-    (team === undefined || team === player.team) && (player.id === 'keyboard' || connected.has(player.id)));
+  const roster = [...players.values()].filter(player => player.id === 'keyboard' || connected.has(player.id));
+  const useKeyboard = !keyboardAutomatic || roster.length === 1;
+  return roster.filter(player => (useKeyboard || player.id !== 'keyboard') &&
+    (team === undefined || team === player.team));
+}
+
+function balanceDuel() {
+  const [first, second, extra] = available();
+  if (!second || extra || first.team !== second.team) return;
+  second.team = 1 - first.team;
+}
+
+function switchTeam(player) {
+  const roster = available();
+  const rival = roster.length === 2 && roster.find(candidate => candidate !== player);
+  player.team = 1 - player.team;
+  if (rival) rival.team = 1 - player.team;
+  if (players.has('keyboard')) keyboardTeam = players.get('keyboard').team;
+  if (screen === 'setup') renderSetup();
 }
 
 function enableSound() {
@@ -87,16 +108,14 @@ function setProgram(list) {
   renderSetup();
 }
 
-function selectPlayer(select, team, selected) {
-  select.append(new Option(team === undefined ? 'Captain assigns' : 'CPU', ''));
-  for (const player of available(team)) {
-    select.append(new Option(team === undefined ? `${player.name} · ${teams[player.team]}` : player.name, player.id));
-  }
+function selectPlayer(select, team, selected, defaultLabel = 'CPU') {
+  select.append(new Option(defaultLabel, ''));
+  for (const player of available(team)) select.append(new Option(player.name, player.id));
   select.value = selected ?? '';
 }
 
 function renderSetup() {
-  const keyboard = players.get('keyboard');
+  const keyboard = available().find(player => player.id === 'keyboard');
   $('keyboard').setAttribute('aria-pressed', Boolean(keyboard));
   $('keyboard').textContent = keyboard ? 'Keyboard joined' : 'Join keyboard';
   $('switch').disabled = !keyboard;
@@ -107,16 +126,22 @@ function renderSetup() {
   $('program').replaceChildren(...program.map((id, index) => {
     const row = element('li', '');
     const name = byId.get(id).name;
-    const select = document.createElement('select');
-    select.setAttribute('aria-label', `Choose the player for ${name}`);
-    selectPlayer(select, undefined, claims.get(id));
-    select.onchange = () => {
-      if (select.value) claims.set(id, select.value);
-      else claims.delete(id);
-    };
+    row.append(element('span', name));
+    for (const [team, side] of teams.entries()) {
+      const select = document.createElement('select');
+      select.setAttribute('aria-label', `Choose the ${side} player for ${name}`);
+      const picks = claims.get(id) ?? [null, null];
+      selectPlayer(select, team, picks[team], side + ' captain');
+      select.onchange = () => {
+        const updated = claims.get(id) ?? [null, null];
+        updated[team] = select.value || null;
+        claims.set(id, updated);
+      };
+      row.append(select);
+    }
     const remove = button('×', () => setProgram(program.filter(event => event !== id)));
     remove.setAttribute('aria-label', `Remove ${name} from position ${index + 1}`);
-    row.append(element('span', name), select, remove);
+    row.append(remove);
     return row;
   }));
   $('groups').replaceChildren(...groups.map((group, i) => {
@@ -137,8 +162,55 @@ function renderSetup() {
   $('start').disabled = program.length === 0 || available().length === 0;
 }
 
+function renderDraft() {
+  const event = events[draftIndex];
+  const selected = program.includes(event.id);
+  $('draft-category').textContent = `${event.group} · ${draftIndex + 1} of ${events.length}`;
+  $('draft-event').textContent = event.name;
+  $('draft-order').textContent = program.length ? program.map(id => byId.get(id).name).join(' → ') : 'Choose at least one event.';
+  $('draft-toggle').textContent = selected ? 'Remove event' : 'Add event';
+  $('draft-toggle').setAttribute('aria-pressed', selected);
+  $('draft-start').disabled = program.length === 0 || available().length === 0;
+}
+
+function openDraft() {
+  screen = 'draft';
+  $('setup').hidden = true;
+  $('draft').hidden = false;
+  draftIndex = Math.max(0, events.findIndex(event => event.id === program[0]));
+  draftPreset = draftPresets.findIndex(preset => preset.length === program.length && preset.every((id, index) => program[index] === id));
+  renderDraft();
+  $('draft-toggle').focus();
+}
+
+function moveDraft(offset) {
+  draftIndex = (draftIndex + offset + events.length) % events.length;
+  renderDraft();
+}
+
+function toggleDraftEvent() {
+  const id = events[draftIndex].id;
+  program = program.includes(id) ? program.filter(entry => entry !== id) : [...program, id];
+  renderDraft();
+}
+
+function nextPreset() {
+  draftPreset = (draftPreset + 1) % draftPresets.length;
+  program = [...draftPresets[draftPreset]];
+  renderDraft();
+}
+
+function closeDraft() {
+  screen = 'setup';
+  $('draft').hidden = true;
+  $('setup').hidden = false;
+  renderSetup();
+  $('open-draft').focus();
+}
+
 function startMeet() {
-  if (screen !== 'setup' || $('start').disabled) return;
+  if (!['setup', 'draft'].includes(screen) || !program.length || !available().length) return;
+  balanceDuel();
   enableSound();
   scores = [0, 0];
   results = [];
@@ -148,22 +220,18 @@ function startMeet() {
 
 function openDesk() {
   const event = byId.get(program[round]);
-  const assigned = lockedEntry();
-  chosen = [null, null];
-  if (assigned) chosen[assigned.team] = assigned.id;
-  else {
-    const firstTeam = round % 2;
-    const captain = available(firstTeam)[0] ?? available(1 - firstTeam)[0];
-    if (captain) chosen[captain.team] = captain.id;
-  }
+  balanceDuel();
+  chosen = [undefined, undefined];
   screen = 'desk';
   $('setup').hidden = true;
+  $('draft').hidden = true;
   $('desk').hidden = false;
   $('results').hidden = true;
   $('reset').hidden = true;
   $('assignments').hidden = false;
   $('desk-title').textContent = event.name;
-  $('briefing').textContent = event.briefing + ' Dirty trick · ' + event.trick + '.';
+  $('briefing').textContent = event.briefing;
+  renderTutorial(event);
   $('advance').textContent = 'Start event';
   refreshScore(`EVENT ${round + 1} / ${program.length}`, event.name);
   renderAssignments();
@@ -171,42 +239,82 @@ function openDesk() {
   setStatus('Clerk of the course: athletes to your marks.');
 }
 
-function lockedEntry() {
-  const roster = available();
-  return roster.length === 1 ? roster[0] : roster.find(player => player.id === claims.get(program[round]));
+function eventEntry(team) {
+  const roster = available(team);
+  const claim = roster.find(player => player.id === claims.get(program[round])?.[team]);
+  const locked = available().length <= 2 || Boolean(claim);
+  const selected = chosen[team];
+  const player = claim ?? (locked ? roster[0] : selected === '' ? null :
+    roster.find(candidate => candidate.id === selected) ?? roster[0]);
+  return {player, locked, roster};
 }
 
 function renderAssignments() {
-  const locked = lockedEntry();
+  balanceDuel();
   $('assignments').replaceChildren(...teams.map((team, index) => {
+    const entry = eventEntry(index);
     const caption = element('label', team + ' ', index ? 'cool' : 'hot');
     const select = document.createElement('select');
-    const entry = locked ? (locked.team === index ? locked.id : null) : chosen[index];
-    selectPlayer(select, index, available(index).some(player => player.id === entry) ? entry : null);
-    select.disabled = Boolean(locked) || available(index).length === 0;
+    selectPlayer(select, index, entry.player?.id);
+    select.disabled = entry.locked || !entry.roster.length;
     select.onchange = () => assign(index, select.value);
     caption.append(select);
     return caption;
   }));
-  $('desk-help').textContent = locked
-    ? `${locked.name} represents ${teams[locked.team]}${available().length === 1 ? ' in solo play' : ' by event claim'}.`
-    : 'One human per event. A team captain can press Y to cycle their entry. Picking a human moves the other team to CPU.';
+  const roster = available();
+  $('desk-help').textContent = roster.length === 2 ? 'Head-to-head · one player on each team.'
+    : roster.length === 1 ? 'Solo · you enter every event against the CPU.'
+      : 'Team captains can press Y / Event to cycle their athlete or CPU.';
 }
 
 function assign(team, id) {
-  chosen[team] = id || null;
-  if (id) chosen[1 - team] = null;
+  chosen[team] = id;
   renderAssignments();
   $('assignments').querySelectorAll('select')[team].focus();
 }
 
+function cycleAthlete(player) {
+  const {roster, locked, player: entrant} = eventEntry(player.team);
+  if (locked || roster[0] !== player) return;
+  const options = ['', ...roster.map(candidate => candidate.id)];
+  assign(player.team, options[(options.indexOf(entrant?.id ?? '') + 1) % options.length]);
+}
+
+function renderTutorial(event) {
+  const rows = [];
+  if (event.stages) {
+    const how = {mash: 'tap fast', release: 'hold, then release in green', tap: 'tap in green'};
+    rows.push(['A / J · Meter', event.stages.map((stage, i) => `${stage} (${how[event.modes?.[i] ?? 'tap']})`).join(' → ')]);
+  } else {
+    rows.push(['A / J · Stride', event.walk ? 'Tap only on the green beat.' :
+      event.rhythm ? 'Wait for GO, then tap at a steady rhythm.' : 'Tap on GO for a quick start, then tap repeatedly.']);
+    rows.push(['B / K · Turbo', event.walk ? 'Holding this is a jog. The official can flag it.' :
+      'Hold for speed. Release to save stamina.']);
+    if (event.gate) rows.push(['Y / I · Event', {
+      jump: 'Tap in the green zone to clear the hurdle.',
+      steeple: 'Tap in green to jump a barrier. Hold through the blue water zone.',
+      pass: 'Tap in green to hand off the baton.',
+      cup: 'Tap at an aid station to refill your turbo.',
+    }[event.gate]]);
+  }
+  rows.push(['X / L · Dirty trick', `${event.trick}. Try it while the official looks away. Three flags disqualify you.`]);
+  $('tutorial-controls').replaceChildren(...rows.map(([control, instructions]) => {
+    const row = element('li', '');
+    row.append(element('kbd', control), element('span', instructions));
+    return row;
+  }));
+  $('tutorial-goal').textContent = event.stages ? 'Highest score wins.' : 'First across the finish wins.';
+  $('tutorial').hidden = false;
+}
+
 function beginHeat() {
   const event = byId.get(program[round]);
-  const representative = lockedEntry() ?? available().find(player => chosen.includes(player.id));
+  balanceDuel();
+  const entries = teams.map((_, team) => eventEntry(team).player);
   heat = {
     event, t: -2.6, call: '', callUntil: -5, refOffset: Math.random() * .8,
     runners: teams.map((_, team) => {
-      const player = representative?.team === team ? representative : null;
+      const player = entries[team];
       return {
         id: player?.id, name: player?.name ?? cpuNames[team][round % cpuNames[team].length],
         team, p: 0, tank: .83, cadence: 0, lastStride: -10, boost: 0, slow: 0, loaded: 0,
@@ -221,7 +329,7 @@ function beginHeat() {
   $('desk').hidden = true;
   $('pause').hidden = false;
   $('pause').textContent = 'Pause';
-  $('touch').classList.toggle('playing', representative?.id === 'keyboard');
+  $('touch').classList.toggle('playing', entries.some(player => player?.id === 'keyboard'));
   setStatus(`Dirty trick · ${event.trick}. Watch the official!`);
 }
 
@@ -501,6 +609,7 @@ function finishHeat() {
   $('desk').hidden = false;
   $('pause').hidden = true;
   $('assignments').hidden = true;
+  $('tutorial').hidden = true;
   $('results').hidden = false;
   $('results').replaceChildren(...results.map(result => element('li', result)));
   const last = round + 1 === program.length;
@@ -547,23 +656,34 @@ function pause() {
 function describePhones() {
   const roster = available();
   const descriptions = {};
-  const locked = screen === 'desk' ? lockedEntry() : null;
-  const entry = screen === 'desk' ? locked ?? roster.find(candidate => chosen.includes(candidate.id)) : null;
+  const entries = screen === 'desk' ? teams.map((_, team) => eventEntry(team)) : [];
   for (const player of roster) {
     if (!window.couchJoinstick.label(Number(player.id))) continue;
     const buttons = {};
     const description = {player: player.name, team: teams[player.team], buttons, hint: ''};
     descriptions[player.id] = description;
     if (screen === 'setup') {
+      buttons[2] = 'Draft events';
       buttons[5] = 'Switch team';
       if (!$('start').disabled) buttons[9] = 'Start meet';
-      description.hint = 'Pick events and claim entries on the shared screen.';
+      description.hint = 'Draft events or start with the lineup on the shared screen.';
+    } else if (screen === 'draft') {
+      if (draftController(player)) {
+        buttons[0] = program.includes(events[draftIndex].id) ? 'Remove event' : 'Add event';
+        buttons[1] = 'Previous';
+        buttons[2] = 'Back to lobby';
+        buttons[3] = 'Next';
+        buttons[5] = 'Change preset';
+        if (program.length) buttons[9] = 'Start meet';
+      }
+      description.hint = 'Event draft · Watch the shared screen.';
     } else if (screen === 'desk') {
       buttons[9] = 'Start event';
-      if (!locked && available(player.team)[0] === player) buttons[3] = 'Choose athlete';
-      description.hint = entry === player ? 'You’re up. Start the event and watch the stadium.'
+      const entry = entries[player.team];
+      if (!entry.locked && entry.roster[0] === player) buttons[3] = 'Choose athlete';
+      description.hint = entry.player === player ? 'You’re up. Read the tutorial on the shared screen.'
         : buttons[3] ? 'Cycle through your teammates or CPU. The shared screen shows the entry.'
-          : 'Watch the shared screen for the next event.';
+          : 'The tutorial and lineup are on the shared screen.';
     } else if (screen === 'result') {
       buttons[9] = round + 1 < program.length ? 'Next event' : 'Back to setup';
       description.hint = 'The result is on the shared screen.';
@@ -594,7 +714,12 @@ function describePhones() {
   return descriptions;
 }
 
+function draftController(player) {
+  return available().find(candidate => candidate.id !== 'keyboard') === player;
+}
+
 function managePads() {
+  const phase = screen;
   const pads = [...(navigator.getGamepads?.() ?? []), ...(window.couchJoinstick?.sample() ?? [])].filter(Boolean);
   const nextConnected = new Set(pads.map(pad => String(pad.index)));
   const changed = [...connected].some(id => !nextConnected.has(id)) || [...nextConnected].some(id => !connected.has(id));
@@ -616,29 +741,42 @@ function managePads() {
     const down = new Set(pad.buttons.flatMap((value, index) => value.pressed ? [index] : []));
     const press = index => down.has(index) && !last.has(index);
     previousPads.set(id, down);
+    if (screen !== phase) continue;
     if (pad.inputCanceled) {
       const runner = screen === 'live' && heat.runners.find(candidate => candidate.id === id);
       if (runner) runner.charge = runner.loaded = 0;
       continue;
     }
-    if (screen === 'setup' && !players.has(id) && press(0)) {
-      const roster = available();
+    if (['setup', 'draft', 'desk'].includes(screen) && !players.has(id) && press(0)) {
+      const roster = keyboardAutomatic ? available().filter(player => player.id !== 'keyboard') : available();
       const team = roster.filter(player => player.team === 0).length > roster.filter(player => player.team === 1).length ? 1 : 0;
       const name = window.couchJoinstick?.label(pad.index) ?? `Pad ${pad.index + 1}`;
       players.set(id, {id, name: `P${nextPlayer++} · ${name}`, team});
-      renderSetup();
+      balanceDuel();
+      if (screen === 'setup') renderSetup();
+      if (screen === 'draft') renderDraft();
+      if (screen === 'desk') renderAssignments();
       continue;
     }
     const player = players.get(id);
     if (!player) continue;
-    if (screen === 'setup' && press(5)) {
-      player.team = 1 - player.team;
-      renderSetup();
+    if (screen === 'setup' && press(5)) switchTeam(player);
+    if (screen === 'setup' && press(2) && draftController(player)) {
+      openDraft();
+      continue;
     }
-    if (screen === 'desk' && press(3) && available(player.team)[0] === player) {
-      const select = $('assignments').querySelectorAll('select')[player.team];
-      if (!select.disabled) assign(player.team, select.options[(select.selectedIndex + 1) % select.options.length].value);
+    if (screen === 'draft') {
+      if (draftController(player)) {
+        if (press(2)) closeDraft();
+        else if (press(9)) startMeet();
+        else if (press(5)) nextPreset();
+        else if (press(0)) toggleDraftEvent();
+        else if (press(1) || press(14)) moveDraft(-1);
+        else if (press(3) || press(15)) moveDraft(1);
+      }
+      continue;
     }
+    if (screen === 'desk' && press(3)) cycleAthlete(player);
     if (press(9) && (available()[0] === player || screen !== 'live')) {
       if (screen === 'setup') startMeet();
       else if (screen === 'live') pause();
@@ -654,7 +792,11 @@ function managePads() {
   }
   if (changed) {
     for (const id of previousPads.keys()) if (!connected.has(id)) previousPads.delete(id);
-    if (screen === 'setup') renderSetup();
+    if (screen === 'setup') {
+      balanceDuel();
+      renderSetup();
+    }
+    if (screen === 'draft') renderDraft();
     if (screen === 'desk') renderAssignments();
   }
 }
@@ -703,6 +845,13 @@ $('sound').onclick = () => {
   if (soundOn) enableSound();
 };
 $('start').onclick = startMeet;
+$('open-draft').onclick = openDraft;
+$('draft-back').onclick = closeDraft;
+$('draft-previous').onclick = () => moveDraft(-1);
+$('draft-next').onclick = () => moveDraft(1);
+$('draft-toggle').onclick = toggleDraftEvent;
+$('draft-preset').onclick = nextPreset;
+$('draft-start').onclick = startMeet;
 $('advance').onclick = advance;
 $('reset').onclick = reset;
 $('pause').onclick = pause;
@@ -710,15 +859,14 @@ $('quick').onclick = () => setProgram([...quickMeet]);
 $('full').onclick = () => setProgram(events.map(event => event.id));
 $('clear').onclick = () => setProgram([]);
 $('keyboard').onclick = () => {
-  if (players.has('keyboard')) players.delete('keyboard');
+  const joined = available().some(player => player.id === 'keyboard');
+  keyboardAutomatic = false;
+  if (joined) players.delete('keyboard');
   else players.set('keyboard', {id: 'keyboard', name: 'Keyboard', team: keyboardTeam});
+  balanceDuel();
   renderSetup();
 };
-$('switch').onclick = () => {
-  keyboardTeam = 1 - keyboardTeam;
-  players.get('keyboard').team = keyboardTeam;
-  renderSetup();
-};
+$('switch').onclick = () => switchTeam(players.get('keyboard'));
 
 function box(x, y, w, h, color) {
   ctx.fillStyle = color;
@@ -916,13 +1064,17 @@ function fieldView() {
     words(runner.name, x, 281, 18, colors[runner.team], 'center');
     words(runner.finish === Infinity ? 'DQ' : `${Math.round(runner.mark * 100)} PTS · ${runner.strikes}/3 FLAGS`, runner.team ? 932 : 28, 315, 18, colors[runner.team], runner.team ? 'right' : 'left');
   }
-  const human = heat.runners.find(activeHuman);
-  const meter = timing.mode === 'mash' ? clamp((human?.taps ?? 0) / 10) : timing.cursor;
-  box(320, 317, 320, 15, '#594659');
-  if (timing.mode !== 'mash') {
+  if (timing.mode === 'mash') {
+    for (const runner of heat.runners) {
+      const left = runner.team ? 518 : 30;
+      box(left, 325, 410, 9, '#594659');
+      box(left, 325, 410 * clamp(runner.taps / 10), 9, colors[runner.team]);
+    }
+  } else {
+    box(320, 317, 320, 15, '#594659');
     box(320 + (.69 - timing.width) * 320, 317, timing.width * 640, 15, '#b0e888');
-    box(318 + meter * 320, 313, 5, 23, '#fff8e8');
-  } else box(320, 317, 320 * meter, 15, '#b0e888');
+    box(318 + timing.cursor * 320, 313, 5, 23, '#fff8e8');
+  }
 }
 
 function draw() {
@@ -934,11 +1086,13 @@ function draw() {
   mascot(748, 69, 1, 0, {official: true});
   words('RACE OFFICIAL', 782, 36, 14, '#fff0d1');
   words(observed ? 'WATCHING!' : 'LOOKING AWAY', 782, 57, 19, observed ? '#ff947c' : '#a9f797');
-  const runner = heat?.runners.find(activeHuman);
-  if (runner && screen === 'live') {
-    words(runner.cooldown > 0 ? `TRICK READY IN ${Math.ceil(runner.cooldown)}` : runner.heat > .75 ? 'TOO SUSPICIOUS' : 'TRICK READY', 20, 28, 17, '#ffedb7');
-    box(20, 35, 98, 4, '#2a2034');
-    box(20, 35, 98 * clamp(runner.heat), 4, '#ffa955');
+  if (screen === 'live') {
+    for (const runner of heat.runners.filter(activeHuman)) {
+      const x = 20 + 242 * runner.team;
+      words(runner.cooldown > 0 ? `TRICK READY IN ${Math.ceil(runner.cooldown)}` : runner.heat > .75 ? 'TOO SUSPICIOUS' : 'TRICK READY', x, 28, 17, colors[runner.team]);
+      box(x, 35, 98, 4, '#2a2034');
+      box(x, 35, 98 * clamp(runner.heat), 4, colors[runner.team]);
+    }
   }
   let message = '';
   if (screen === 'live') {

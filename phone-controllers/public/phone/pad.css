@@ -266,6 +266,16 @@ body[data-game="track"] { --base: #21192b; --panel: #3c2c48; --edge: #786080; --
   font: inherit;
 }
 
+body[data-game="hoops"] #controls.hoops-recovery { grid-template-columns: minmax(0, 1fr); }
+body[data-game="hoops"] .hoops-recovery #face-buttons {
+  grid-template: var(--face-size) / repeat(3, var(--face-size));
+  gap: clamp(8px, 3vw, 20px);
+}
+body[data-game="hoops"] .hoops-recovery #face-buttons::before { display: none; }
+body[data-game="hoops"] .hoops-recovery #face-buttons [data-action="0"] { grid-area: 1 / 1; }
+body[data-game="hoops"] .hoops-recovery #face-buttons [data-action="1"] { grid-area: 1 / 2; }
+body[data-game="hoops"] .hoops-recovery #face-buttons [data-action="3"] { grid-area: 1 / 3; }
+
 body[data-game="lobby"] .utilities { flex-wrap: wrap; justify-content: flex-end; }
 #profile-dialog {
   width: min(34rem, calc(100% - 24px));

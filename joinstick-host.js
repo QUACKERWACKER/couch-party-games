@@ -233,23 +233,23 @@
 function setupLauncher(hostedPhone) {
   const home = new URL('./', document.currentScript.src);
   const main = document.querySelector('main');
-  const open = document.querySelector('#phone-pairing');
-  const dialog = document.querySelector('#phone-room');
-  const status = dialog.querySelector('[role="status"]');
-  const invite = dialog.querySelector('.invite');
+  const panel = document.querySelector('#phone-room');
+  const status = panel.querySelector('[role="status"]');
+  const invite = panel.querySelector('.invite');
   const qr = invite.querySelector('img');
   const link = invite.querySelector('.phone-invite');
   const codeUrl = invite.querySelector('.code-url');
   const roomCode = invite.querySelector('.room-code');
   const copy = document.querySelector('#copy-phone-invite');
-  const start = dialog.querySelector('#start-phone-room');
-  const stop = dialog.querySelector('#stop-phone-room');
+  const start = panel.querySelector('#start-phone-room');
+  const stop = panel.querySelector('#stop-phone-room');
   const links = [...main.querySelectorAll('.game')];
   const gameKeys = links.map(link => link.dataset.game);
   const ready = new Set();
   const players = new Map();
   const roster = document.querySelector('#players-list');
-  const playersOpen = document.querySelector('#players-open');
+  const playersCount = document.querySelector('#players-count');
+  const manualJoin = document.querySelector('#enter-phone-code');
   const {avatar, colors, defaults, normalize} = window.couchProfiles;
   let menuSelection = gameKeys[0];
 
@@ -267,17 +267,15 @@ function setupLauncher(hostedPhone) {
       return item;
     }));
     document.querySelector('#players-empty').hidden = entries.length > 0;
-    playersOpen.textContent = entries.length ? `Players (${entries.length})` : 'Players';
+    const count = entries.length + ' connected';
+    if (playersCount.textContent !== count) playersCount.textContent = count;
   }
-
-  playersOpen.hidden = false;
-  playersOpen.onclick = () => document.querySelector('#players-room').showModal();
 
   let room, frame, game, selected, listeners;
 
-  open.hidden = false;
-  open.onclick = () => dialog.showModal();
-  copy.hidden = !navigator.clipboard?.writeText;
+  panel.hidden = false;
+  manualJoin.hidden = !hostedPhone;
+  if (hostedPhone) manualJoin.href = hostedPhone.href;
   copy.onclick = async () => {
     try {
       await navigator.clipboard.writeText(link.href);
@@ -319,8 +317,7 @@ function setupLauncher(hostedPhone) {
       if (game || room?.status !== 'connected') return [];
       return [...ready].filter(slot => room.connected(slot)).map(slot => {
         const {x, y, buttons, pressed} = room.input(slot);
-        return {index: 1_000_000 + slot, connected: true, mapping: 'standard', phone: true,
-          axes: [x, y], buttons: [{pressed: Boolean(buttons.b0 || pressed.b0)}]};
+        return {index: slot, x, y, confirm: Boolean(buttons.b0 || pressed.b0)};
       });
     },
     attach(child, key) {
@@ -360,14 +357,10 @@ function setupLauncher(hostedPhone) {
     else if (frame) showGame(null);
   });
 
-  function updateCount() {
+  function updateStatus() {
     if (!room) return;
-    const count = Array.from({length: room.slots}, (_, i) => i + 1)
-      .filter(slot => room.connected(slot)).length;
-    status.textContent = room.status === 'connected'
-      ? `${count} of ${room.slots} phones connected. Scan the QR code or enter the room code on your phone.`
-      : 'Reconnecting to the phone relay…';
-    open.textContent = count ? `Phone controllers (${count})` : 'Phone controllers';
+    const message = room.status === 'connected' ? 'Room open' : 'Reconnecting to the phone relay…';
+    if (status.textContent !== message) status.textContent = message;
   }
 
   function closeRoom(message) {
@@ -378,13 +371,13 @@ function setupLauncher(hostedPhone) {
     players.clear();
     updateRoster();
     if (frame) history.back();
-    invite.hidden = stop.hidden = true;
+    invite.hidden = stop.hidden = copy.hidden = true;
+    manualJoin.hidden = !hostedPhone;
     qr.removeAttribute('src');
     link.removeAttribute('href');
     codeUrl.removeAttribute('href');
     codeUrl.textContent = roomCode.textContent = '';
     copy.textContent = 'Copy invite';
-    open.textContent = 'Phone controllers';
     start.hidden = start.disabled = false;
     status.textContent = message;
   }
@@ -436,14 +429,14 @@ function setupLauncher(hostedPhone) {
         updateRoster();
         current.send(slot, {couchGame: game ?? null});
         listeners?.join?.({slot, rejoin});
-        updateCount();
+        updateStatus();
       });
       current.on('leave', event => {
         ready.delete(event.slot);
         if (event.reason === 'kicked') players.delete(event.slot);
         updateRoster();
         listeners?.leave?.(event);
-        updateCount();
+        updateStatus();
       });
       current.on('message', event => {
         const {slot, data} = event;
@@ -471,7 +464,7 @@ function setupLauncher(hostedPhone) {
       current.on('status', value => {
         if (room !== current) return;
         if (value === 'closed') closeRoom('The relay closed this room. Start a new room to pair phones.');
-        else updateCount();
+        else updateStatus();
       });
       const relay = new URL(couchJoinstickPublicUrl ?? server);
       const inviteUrl = new URL(hostedPhone ?? '/phone/', relay.protocol === 'https:' ? relay : current.joinUrl());
@@ -483,9 +476,10 @@ function setupLauncher(hostedPhone) {
       link.href = inviteUrl.href;
       qr.src = 'data:image/svg+xml,' + encodeURIComponent(renderSVG(link.href, {border: 4}));
       invite.hidden = stop.hidden = false;
-      start.hidden = true;
-      if (dialog.open) stop.focus();
-      updateCount();
+      copy.hidden = !navigator.clipboard?.writeText;
+      manualJoin.hidden = start.hidden = true;
+      link.focus();
+      updateStatus();
     } catch (error) {
       console.warn('Phone room could not start:', error);
       closeRoom('Could not start a phone room. Check that the Couch Party phone relay is running and try again.');

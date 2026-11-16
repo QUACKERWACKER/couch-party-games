@@ -55,6 +55,9 @@ const hoopsModes = {
   loose: {labels: {0: 'Block', 1: 'Turbo', 2: 'Steal', 9: 'Pause'}, hint: 'Follow the ball on the shared screen.'},
   freeThrow: {labels: {0: 'Free throw', 9: 'Pause'}, hint: 'Watch the shared meter. Tap Free throw in green.'},
   freeThrowWait: {labels: {9: 'Pause'}, hint: 'Free throws in progress.'},
+  recoveryPreview: {labels: {}, hint: 'Memorize the recovery order on the shared screen.'},
+  recovery: {labels: {0: 'Ice', 1: 'Tape', 3: 'Stretch'}, hint: 'Repeat the order to recover faster.'},
+  recoveryWait: {labels: {}, hint: 'Injury recovery in progress. Watch the shared screen.'},
   halftime: {labels: {9: 'Skip halftime'}, hint: 'Watch the highlights on the shared screen.'},
   paused: {labels: {9: 'Resume'}, hint: 'The game is paused.'},
   stoppage: {labels: {9: 'Pause'}, hint: 'Watch the call or replay on the shared screen.'},
@@ -513,11 +516,17 @@ function updateHoops(info) {
     const label = view.labels[number];
     setActionLabel(action, label === 'Joined' ? null : label);
   }
-  emphasizeAction(view === hoopsModes.lobby ? 9 : 0);
+  const recovery = view === hoopsModes.recovery;
+  const recoveryScreen = recovery || view === hoopsModes.recoveryPreview || view === hoopsModes.recoveryWait;
+  $('controls').classList.toggle('hoops-recovery', recoveryScreen);
+  $('movement').hidden = recoveryScreen;
+  if (recoveryScreen) {
+    for (const action of actions.values()) action.element.classList.remove('primary');
+  } else emphasizeAction(view === hoopsModes.lobby ? 9 : 0);
   $('move-label').textContent = view.move || game.move;
   $('player').textContent = info?.player || 'Phone ' + pad.slot;
   $('status').textContent = info?.team || 'Connected';
-  $('hint').textContent = view.hint;
+  $('hint').textContent = recovery ? `${view.hint} ${info.progress}/3 complete.` : view.hint;
 }
 
 async function connect() {

@@ -2,7 +2,7 @@
 
 Local multiplayer browser games for a shared screen. The launcher includes Blitz 7, Blitz Hoops, Blitz Track, Bedrock Rivals, and Ringout.
 
-On macOS, open `Play.command` with Python 3 installed. The games accept keyboard input and standard gamepads. See [Joinstick.md](Joinstick.md) for browser-based phone controllers.
+On macOS, open `Play.command` with Python 3 installed. Blitz Hoops uses Wi-Fi phone controllers for player input. Other games also accept keyboard input or standard gamepads. See [Joinstick.md](Joinstick.md) for browser-based phone controllers.
 
 ## Hosting
 

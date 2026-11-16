@@ -27,26 +27,45 @@
   </section>
   <div class="ribbon"><span id="status" role="status">Press A on a controller to join, or play on the keyboard.</span><button id="pause" hidden>Pause</button></div>
   <section id="setup" class="panel" aria-labelledby="setup-title">
-    <div class="section-head"><h2 id="setup-title">Build your meet</h2><button id="start" class="primary">Start meet</button></div>
+    <div class="section-head"><h2 id="setup-title">Build your meet</h2><div class="button-row"><button id="open-draft">Draft events</button><button id="start" class="primary">Start meet</button></div></div>
     <div class="lobby">
       <div>
         <h3>Teams</h3>
         <div class="button-row"><button id="keyboard" aria-pressed="true">Keyboard joined</button><button id="switch">Switch team</button></div>
         <div id="rosters" class="rosters"></div>
-        <p class="help">A joins · RB switches teams · first to join captains the team</p>
+        <p class="help">A joins · RB switches teams · X opens the event draft · Start continues</p>
       </div>
       <div>
         <h3>Event order</h3>
         <div class="button-row"><button id="quick">Quick 5</button><button id="full">All events</button><button id="clear">Clear</button></div>
         <ol id="program"></ol>
-        <p class="help">Claim an event here, or leave it for a captain to assign.</p>
+        <p class="help">Pick an athlete for each team or let the team captain decide before the event.</p>
       </div>
     </div>
     <div id="groups" class="groups"></div>
   </section>
+  <section id="draft" class="panel" aria-labelledby="draft-title" hidden>
+    <div class="section-head"><h2 id="draft-title">Draft your events</h2><button id="draft-start" class="primary">Start meet</button></div>
+    <div class="draft-current">
+      <small id="draft-category"></small>
+      <h3 id="draft-event" aria-live="polite"></h3>
+      <div class="button-row">
+        <button id="draft-previous">← Previous</button>
+        <button id="draft-toggle" class="primary">Add event</button>
+        <button id="draft-next">Next →</button>
+      </div>
+    </div>
+    <p id="draft-order" class="draft-order"></p>
+    <div class="button-row"><button id="draft-preset">Change preset</button><button id="draft-back">Back to lobby</button></div>
+    <p class="help">B / Y browse · A adds or removes · RB cycles Quick 5, All, and Empty · X goes back · Start confirms</p>
+  </section>
   <section id="desk" class="panel" aria-labelledby="desk-title" hidden>
     <div class="section-head"><h2 id="desk-title"></h2><button id="advance" class="primary"></button></div>
     <p id="briefing"></p>
+    <div id="tutorial" class="tutorial" aria-labelledby="tutorial-title" hidden>
+      <div class="section-head"><h3 id="tutorial-title">How to play</h3><strong id="tutorial-goal"></strong></div>
+      <ul id="tutorial-controls"></ul>
+    </div>
     <div id="assignments" class="rosters"></div>
     <p id="desk-help" class="help"></p>
     <ol id="results" hidden></ol>

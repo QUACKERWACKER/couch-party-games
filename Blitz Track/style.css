@@ -73,9 +73,17 @@ canvas { display: block; width: 100%; height: auto; }
 #program, #results { max-height: 11rem; overflow-y: auto; margin: 8px 0; padding: 0 2px 0 24px; }
 #program li { padding: 4px 0; }
 #program li span { display: inline-block; min-width: 40%; padding-right: 6px; }
-#program select { max-width: 48%; }
+#program select { max-width: 48%; margin: 2px 4px 2px 0; }
 #program button { min-width: 32px; margin-left: 4px; }
 #results li { margin-bottom: 4px; }
+.draft-current, .tutorial { background: #221d2e; border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin-top: 12px; }
+.draft-current small { color: var(--muted); }
+.draft-current h3 { font-size: clamp(24px, 5vw, 36px); }
+.draft-order { margin-top: 10px; max-height: 5em; overflow-y: auto; color: var(--muted); }
+#tutorial-goal { color: var(--lime); font-size: .86rem; }
+#tutorial-controls { display: grid; gap: 6px; list-style: none; padding: 0; margin: 9px 0 0; }
+#tutorial-controls li { display: flex; gap: 4px 10px; flex-wrap: wrap; align-items: baseline; }
+#tutorial-controls li span { flex: 1 1 220px; }
 .groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 12px; align-items: start; }
 details { border: 1px solid var(--line); border-radius: 5px; padding: 7px 10px; }
 details[open] summary { color: var(--lime); }
