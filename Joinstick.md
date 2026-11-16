@@ -47,4 +47,4 @@ If you already host a relay, forward HTTP routes and WebSocket upgrades to its p
 
 Use a relay you control or trust because the launcher loads its Joinstick browser code. The game itself still runs on the host Mac. Remote phones get the controls, and players elsewhere need a separate view of the game. Stock Joinstick uses four-letter room codes, so use it for trusted playtests and add stronger room admission before offering a public service.
 
-An existing stock Joinstick 0.2.0 relay still works with the generic D-pad layout. The current room limit is eight Joinstick phones, or six in Blitz Hoops. Physical and Steam QR Controller pads count toward each game's own seat limit.
+The project's relay accepts up to 16 phone connections per room. The games decide how many players can take a seat. Physical and Steam QR Controller pads count toward each game's own seat limit. A stock Joinstick 0.2.0 relay still works with its original limits and generic D-pad layout.

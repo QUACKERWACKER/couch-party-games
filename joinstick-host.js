@@ -12,7 +12,7 @@
     bedrock: {slots: 8, labels: {0: 'Dig/A', 1: 'Fire/B', 2: 'Summon/X', 3: 'Buy/Y', 4: 'Jet/LB', 5: 'Minion', 7: 'Upgrade'}},
     ringout: {slots: 8, labels: {0: 'Dash/A', 1: 'Dodge/B', 2: 'Push/X', 3: 'Emote/Y', 5: 'Trick/RB', 9: 'Start'}},
   };
-  const {slots, labels} = layouts[game];
+  const {slots: stockSlots, labels} = layouts[game];
   const buttonMap = Object.entries(labels).map(([index, label]) => [Number(index), label]);
   const layout = {
     arrangement: 'arc',
@@ -136,7 +136,7 @@
       }
       const count = [...playerIds.keys()].filter(slot => room.connected(slot)).length;
       const access = inviteUrl.protocol === 'https:' ? 'Internet invite' : 'Local Wi-Fi invite';
-      status.textContent = `${access} · ${count} of ${slots} phones connected. Scan the code, then press ${drawQr ? 'Join' : 'A'} on the controller.`;
+      status.textContent = `${access} · ${count} of ${room.slots} phones connected. Scan the code, then press ${drawQr ? 'Join' : 'A'} on the controller.`;
     } else if (room) {
       status.textContent = 'Reconnecting to Joinstick…';
     }
@@ -204,6 +204,7 @@
         import(server + '/phone/qr.js').catch(() => null),
       ]);
       drawQr = qrModule?.renderSVG;
+      const slots = qrModule?.maxPhoneConnections ?? stockSlots;
       const current = await host({server, slots, layout});
       room = current;
       for (let slot = 1; slot <= slots; slot++) {

@@ -4,6 +4,7 @@
   "type": "module",
   "engines": {"node": ">=22"},
   "scripts": {
+    "postinstall": "node patch-joinstick.js",
     "start": "node server.js",
     "internet": "node server.js --internet"
   },

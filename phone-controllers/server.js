@@ -2,8 +2,11 @@ import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
-import {attach} from 'joinstick';
 import {openInternetGame} from './internet.js';
+import {maxPhoneConnections} from './room-capacity.js';
+
+await import('./patch-joinstick.js');
+const {attach} = await import('joinstick');
 
 const {values: args} = parseArgs({options: {
   port: {type: 'string'},
@@ -14,7 +17,8 @@ const {values: args} = parseArgs({options: {
 }});
 const port = Number(args.port ?? (args.internet ? 0 : process.env.PORT ?? 3000));
 const publicUrl = args['public-url'] ?? process.env.PUBLIC_URL;
-const qrModule = await readFile(new URL(import.meta.resolve('uqr')));
+const qrModule = `export const maxPhoneConnections = ${maxPhoneConnections};\n`
+  + await readFile(new URL(import.meta.resolve('uqr')), 'utf8');
 const server = createServer((request, response) => {
   if (request.method === 'GET' && request.url === '/phone/qr.js') {
     response.writeHead(200, {
