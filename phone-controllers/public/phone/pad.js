@@ -630,6 +630,15 @@ function installProfileEditor() {
   });
 }
 
+if (validCode && (lobby || game)) {
+  document.querySelector('main').addEventListener('touchend', event => {
+    const control = event.target.closest?.('[data-action], [data-stick]');
+    if (!control || !event.cancelable || actions.get(Number(control.dataset.action))?.local) return;
+    // These controls already consume pointer events. Suppress Safari's follow-up native tap.
+    event.preventDefault();
+  }, {passive: false});
+}
+
 if (lobby && validCode) {
   document.body.dataset.game = 'lobby';
   document.querySelector('h1').textContent = 'Couch Party Games';

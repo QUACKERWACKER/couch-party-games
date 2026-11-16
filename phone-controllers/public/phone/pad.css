@@ -127,6 +127,8 @@ button {
   padding: 6px 10px;
   cursor: pointer;
 }
+body[data-game] main :is(.action, .stick) { touch-action: none; }
+.action > span { pointer-events: none; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 #controls {
   container-type: inline-size;
@@ -204,7 +206,7 @@ body[data-game="ringout"] #actions {
 }
 .face-letter { color: var(--face-color); font-size: .7rem; line-height: 1; }
 .action-label { min-width: 0; max-width: 100%; overflow-wrap: anywhere; text-wrap: balance; }
-#utility-buttons .action { touch-action: none; border-radius: 999px; font-size: .75rem; padding: 4px; line-height: 1.12; }
+#utility-buttons .action { border-radius: 999px; font-size: .75rem; padding: 4px; line-height: 1.12; }
 :is(#controls, #system-buttons, #utility-buttons) .action.primary {
   --primary-color: var(--face-color, var(--accent));
   color: #141b22;
