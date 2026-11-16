@@ -17,7 +17,7 @@ Keep it running. In a second terminal, from the Couch Party Games folder:
 ./Play.command --joinstick http://127.0.0.1:3000
 ```
 
-Open a game, choose **Phone controllers**, then **Start room**. Scan the QR code or open the invite on a phone on the same Wi-Fi. Tap the highlighted action to claim a seat. Close the panel to play. **Disconnect room** removes those phones from the game.
+On the games home page, choose **Phone controllers → Start room**. Scan the QR code or open the invite on a phone on the same Wi-Fi. Close the panel and choose a game. The phone switches to that game’s controls. Tap Join to claim a seat. Return to the games home page to change games or disconnect the room.
 
 If the QR points at the wrong network interface, restart the relay with `npm start --prefix phone-controllers -- --public-url http://YOUR-MAC-LAN-IP:3000`. Allow Node to accept incoming connections if macOS prompts you.
 
@@ -37,7 +37,7 @@ Install [cloudflared](https://developers.cloudflare.com/cloudflare-one/networks/
 npm run internet --prefix phone-controllers
 ```
 
-This starts a temporary public HTTPS tunnel for the phone relay and opens the local game launcher. Keep the terminal open during play. In the game, select **Phone controllers → Start room**. Check that the panel says **Internet invite** and the link starts with `https://`. Share that link or scan its QR code. Restarting the command gives you a new link. Test it with Wi-Fi turned off on your phone.
+This starts a temporary public HTTPS tunnel for the phone relay and opens the local game launcher. Keep the terminal open during play. On the games home page, select **Phone controllers → Start room**. Check that the invite link starts with `https://`. Share that link or scan its QR code. Restarting the command gives you a new link. Test it with Wi-Fi turned off on your phone.
 
 If you already host a relay, forward HTTP routes and WebSocket upgrades to its port, and set `--public-url` or `PUBLIC_URL` to the public HTTPS origin. Then launch the games locally with your relay's address:
 

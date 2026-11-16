@@ -60,10 +60,13 @@ const hoopsModes = {
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const gameKey = params.get('g');
+const managed = gameKey === 'lobby' || params.get('p') === '1';
+const lobby = gameKey === 'lobby';
 const code = params.get('r')?.toUpperCase();
 const game = Object.hasOwn(games, gameKey) ? games[gameKey] : null;
 const actions = new Map();
 const sticks = {};
+const portrait = matchMedia('(orientation: portrait)');
 let pad;
 let movementFrame = 0;
 let lastAim = [0, 0];
@@ -101,16 +104,17 @@ function installStick(element) {
   const stick = {element, x: 0, y: 0, pointer: null, keys: new Set()};
   sticks[element.dataset.stick] = stick;
   const move = event => {
-    const {left, top, width, height} = stick.bounds;
-    setStick(stick, (event.clientX - left - width / 2) / (width * .35),
-      (event.clientY - top - height / 2) / (height * .35));
+    const {left, top, width, height} = element.getBoundingClientRect();
+    const screenX = (event.clientX - left - width / 2) / (width * .35);
+    const screenY = (event.clientY - top - height / 2) / (height * .35);
+    // Undo the portrait viewport's clockwise quarter-turn before sending game axes.
+    setStick(stick, portrait.matches ? screenY : screenX, portrait.matches ? -screenX : screenY);
     if (!movementFrame) movementFrame = requestAnimationFrame(publish);
   };
   element.addEventListener('pointerdown', event => {
     if (event.button !== 0 || stick.pointer !== null) return;
     event.preventDefault();
     stick.pointer = event.pointerId;
-    stick.bounds = element.getBoundingClientRect();
     element.setPointerCapture(event.pointerId);
     move(event);
   });
@@ -153,7 +157,7 @@ function setAction(action, held) {
 }
 
 function setActionLabel(action, label) {
-  if (label) action.element.textContent = label;
+  if (label && action.caption.textContent !== label) action.caption.textContent = label;
   action.element.dataset.inactive = String(!label);
   action.element.hidden = !label && !action.held;
   action.element.setAttribute('aria-disabled', String(!label));
@@ -164,9 +168,20 @@ function installAction(number, label) {
   element.type = 'button';
   element.dataset.action = number;
   element.className = number === 0 ? 'action primary' : 'action';
-  element.textContent = label;
-  $(number < 4 ? 'face-buttons' : 'utility-buttons').append(element);
-  const action = {element, pointer: null, held: false, keyboard: false, clickTimer: 0};
+  const face = ['A', 'B', 'X', 'Y'][number];
+  if (face) {
+    const marker = document.createElement('span');
+    marker.className = 'face-letter';
+    marker.setAttribute('aria-hidden', 'true');
+    marker.textContent = face;
+    element.append(marker);
+  }
+  const caption = document.createElement('span');
+  caption.className = 'action-label';
+  caption.textContent = label;
+  element.append(caption);
+  $(face ? 'face-buttons' : 'utility-buttons').append(element);
+  const action = {element, caption, pointer: null, held: false, keyboard: false, clickTimer: 0};
   actions.set(number, action);
   element.addEventListener('pointerdown', event => {
     if (action.local || event.button !== 0 || action.pointer !== null || element.getAttribute('aria-disabled') === 'true') return;
@@ -310,6 +325,7 @@ function updateBedrock(info) {
     setActionLabel(action, label);
     action.local = playing && number === 5 ? 'minion' : playing && number === 7 ? 'upgrade' : null;
   }
+  emphasizeAction();
   $('movement').hidden = !playing;
   $('controls').dataset.phase = playing ? 'play' : 'lobby';
   $('player').textContent = hasSeat ? info.player + (info.host ? ' · Host' : '') : 'Phone ' + pad.slot;
@@ -323,6 +339,15 @@ function updateBedrock(info) {
 }
 
 function roomStatus(status) {
+  if (lobby) {
+    const connected = status === 'connected';
+    $('leave').hidden = !connected;
+    $('retry').hidden = status !== 'closed';
+    $('status').textContent = connected ? 'Paired. Choose a game on the shared screen.'
+      : status === 'closed' ? 'Disconnected' : 'Reconnecting…';
+    if (connected) pad.send({ready: true, couchGame: null});
+    return;
+  }
   const connected = status === 'connected';
   $('controls').hidden = $('hint').hidden = $('player').hidden = !connected;
   $('leave').hidden = status === 'closed';
@@ -349,7 +374,7 @@ function roomStatus(status) {
         if (!document.hidden) bedrockLive(true);
       }, 400);
     }
-    pad.send({ready: true});
+    pad.send({ready: true, couchGame: gameKey});
     blitzActivity(!document.hidden);
     if (gameKey === 'ringout') publishRingoutHeartbeat();
     if (gameKey === 'hoops') {
@@ -366,6 +391,14 @@ function roomStatus(status) {
   }
 }
 
+function emphasizeAction(preferred = 0) {
+  const available = number => actions.get(number)?.element.dataset.inactive === 'false';
+  const primary = available(preferred) ? preferred : [0, 3, 2, 1, 9, 5, 7].find(available);
+  for (const [number, action] of actions) {
+    action.element.classList.toggle('primary', number === primary);
+  }
+}
+
 function updateTrack(info) {
   const labels = info?.buttons ?? {0: 'Join'};
   for (const [number, action] of actions) {
@@ -373,6 +406,7 @@ function updateTrack(info) {
     // Keep a captured button visible until its finger lifts, even when the stage changes.
     setActionLabel(action, label);
   }
+  emphasizeAction(info?.primary);
   $('player').textContent = info?.player ?? 'Phone ' + pad.slot;
   $('status').textContent = info?.team ?? 'Connected';
   $('hint').textContent = info?.hint ?? game.hint;
@@ -404,6 +438,7 @@ function updateBlitz(info) {
   const labels = Object.hasOwn(blitzModes, mode) ? blitzModes[mode] : null;
   if (!info?.player || !labels) {
     for (const [number] of game.actions) blitzAction(number, number === 0 ? 'Join' : null);
+    emphasizeAction();
     $('player').textContent = 'Phone ' + pad.slot;
     $('status').textContent = 'Connected';
     $('hint').textContent = game.hint;
@@ -418,6 +453,7 @@ function updateBlitz(info) {
   [selected === 'PUNT' ? 'Punt' : a, b, x, y].forEach((label, index) => blitzAction(index, label));
   blitzAction(5, mode === 'lobby' ? (info.host ? 'Team / CPU' : 'Switch team') : null);
   blitzAction(9, info.host ? ({lobby: 'Start', paused: 'Resume', final: 'Back to lobby'}[mode] || 'Pause') : null);
+  emphasizeAction(mode === 'runner' ? 1 : 0);
   if (!book || blitzBook?.id !== book.id) {
     blitzMenu.open = false;
     blitzSelect.replaceChildren(...(book?.options || []).map((name, index) => new Option(name, index)));
@@ -449,8 +485,8 @@ function updateRingout(info) {
   }
   for (const [number, action] of actions) {
     setActionLabel(action, buttons[number]);
-    action.element.classList.toggle('primary', number === (info?.primary ?? 0));
   }
+  emphasizeAction(info?.primary);
   $('player').textContent = info?.player || 'Phone ' + pad.slot;
   $('hint').textContent = info?.hint ?? game.hint;
 }
@@ -461,6 +497,7 @@ function updateHoops(info) {
     const label = view.labels[number];
     setActionLabel(action, label === 'Joined' ? null : label);
   }
+  emphasizeAction(view === hoopsModes.lobby ? 9 : 0);
   $('move-label').textContent = view.move || game.move;
   $('player').textContent = info?.player || 'Phone ' + pad.slot;
   $('status').textContent = info?.team || 'Connected';
@@ -477,6 +514,15 @@ async function connect() {
     pad.on('status', roomStatus);
     pad.on('error', error => {
       $('status').textContent = error.code === 'kicked' ? 'The host disconnected this phone.' : 'Connection lost.';
+    });
+    if (managed) pad.on('message', data => {
+      if (!data || !Object.hasOwn(data, 'couchGame')) return;
+      const next = data.couchGame ?? 'lobby';
+      if (next === gameKey || (next !== 'lobby' && !Object.hasOwn(games, next))) return;
+      neutral();
+      params.set('p', '1');
+      params.set('g', next);
+      location.replace('?' + params);
     });
     if (gameKey === 'blitz') pad.on('message', ({blitz} = {}) => updateBlitz(blitz));
     if (gameKey === 'bedrock') pad.on('message', data => {
@@ -496,7 +542,11 @@ async function connect() {
   }
 }
 
-if (game && /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/.test(code)) {
+if (lobby && /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/.test(code)) {
+  $('retry').onclick = () => location.reload();
+  $('leave').onclick = () => pad.leave();
+  connect();
+} else if (game && /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/.test(code)) {
   document.body.dataset.game = gameKey;
   document.querySelector('h1').textContent = game.title;
   document.title = game.title + ' · Phone controller';
@@ -520,6 +570,7 @@ if (game && /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/.test(code)) {
   $('retry').onclick = () => location.reload();
   $('leave').onclick = () => { neutral(); if (gameKey === 'ringout') pad.send({leave:true}); if (gameKey === 'bedrock') pad.send({bedrock: {leave: true}}); if (gameKey === 'blitz') pad.send({blitzLeave: true}); pad.leave(); };
   addEventListener('blur', neutral);
+  portrait.addEventListener('change', neutral);
   function suspendControls() {
     neutral();
     closeBedrockPicker();
@@ -540,5 +591,5 @@ if (game && /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/.test(code)) {
   }
   connect();
 } else {
-  $('status').textContent = 'Open a controller invite from the game screen.';
+  $('status').textContent = 'Open a controller invite from the games home page.';
 }

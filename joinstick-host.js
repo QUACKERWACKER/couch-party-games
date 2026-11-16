@@ -5,20 +5,28 @@
   const hostedPhone = typeof couchJoinstickHostedPhone !== 'undefined'
     ? new URL('./phone/', document.currentScript.src) : null;
   const game = document.currentScript.dataset.game;
-  const layouts = {
-    blitz: {slots: 8, labels: {0: 'Join', 1: 'Sprint', 2: 'Dash', 3: 'Kick', 5: 'Team/CPU', 9: 'Start'}},
-    hoops: {slots: 6, labels: {0: 'Shoot/A', 1: 'Turbo/B', 2: 'Swipe/X', 3: 'Pass/Y', 5: 'Team/RB', 9: 'Start'}},
-    track: {slots: 8, labels: {0: 'Join / A', 1: 'Turbo', 2: 'Trick', 3: 'Event', 5: 'Team', 9: 'Start'}},
-    bedrock: {slots: 8, labels: {0: 'Dig', 1: 'Fire', 2: 'Summon', 3: 'Upgrade', 5: 'Minion', 7: 'Pick kit'}},
-    ringout: {slots: 8, labels: {0: 'Dash/A', 1: 'Dodge/B', 2: 'Push/X', 3: 'Emote/Y', 5: 'Trick/RB', 9: 'Start'}},
+  if (!game) {
+    setupLauncher(hostedPhone);
+    return;
+  }
+
+  let launcher;
+  try {
+    if (window.parent !== window) launcher = window.parent.couchPartyLauncher;
+  } catch {
+    // Games can also be opened directly or embedded on another origin.
+  }
+  const room = launcher?.attach(window, game);
+  if (!room) return;
+
+  const buttonsByGame = {
+    blitz: [0, 1, 2, 3, 5, 9],
+    hoops: [0, 1, 2, 3, 5, 9],
+    track: [0, 1, 2, 3, 5, 9],
+    bedrock: [0, 1, 2, 3, 5, 7],
+    ringout: [0, 1, 2, 3, 5, 9],
   };
-  const {slots: stockSlots, labels} = layouts[game];
-  const buttonMap = Object.entries(labels).map(([index, label]) => [Number(index), label]);
-  const layout = {
-    arrangement: 'arc',
-    stick: 'dpad',
-    buttons: buttonMap.map(([index, label]) => ({id: 'b' + index, label, system: index === 9})),
-  };
+  const buttonMap = buttonsByGame[game];
   const playerIds = new Map();
   const aimInputs = new Map();
   const sentInfo = new Map();
@@ -34,8 +42,6 @@
   const canceledInputs = new Set();
   const blitzActivity = new Map();
   let nextId = 1_000_000;
-  let room;
-  let drawQr;
   let describe;
   let onBlitzCommand;
   let bedrockMessage;
@@ -48,7 +54,7 @@
     sample() {
       if (room?.status !== 'connected') return [];
       const pads = [];
-      const labels = drawQr && describe?.();
+      const labels = describe?.();
       for (const [slot, index] of playerIds) {
         if (!room.connected(slot)) continue;
         const activity = blitzActivity.get(slot);
@@ -102,11 +108,11 @@
           continue;
         }
         const inputCanceled = canceledInputs.has(slot);
-        if (inputCanceled && !buttonMap.some(([number]) => input.buttons['b' + number])) {
+        if (inputCanceled && !buttonMap.some(number => input.buttons['b' + number])) {
           canceledInputs.delete(slot);
         }
         const buttons = Array.from({length: 17}, () => ({pressed: false, value: 0}));
-        for (const [number] of buttonMap) {
+        for (const number of buttonMap) {
           const id = 'b' + number;
           // Keep a tap that began and ended between two game frames.
           const pressed = !trackCanceled && !inputCanceled && !suppressRingout && !suppressHoops && Boolean(input.buttons[id] || input.pressed[id]);
@@ -138,136 +144,217 @@
     },
   };
 
-  const open = document.createElement('button');
-  open.type = 'button';
-  open.textContent = 'Phone controllers';
-  open.setAttribute('aria-haspopup', 'dialog');
-  const header = document.querySelector('header');
-  (header.querySelector('.header-tools') || header).append(open);
+  for (let slot = 1; slot <= room.slots; slot++) {
+    if (room.connected(slot)) playerIds.set(slot, nextId++);
+  }
+  room.on('join', ({slot, rejoin}) => {
+    if (!rejoin || !playerIds.has(slot)) playerIds.set(slot, nextId++);
+    else if (game === 'ringout') inputResets.add(slot);
+    if (game === 'hoops' && rejoin) hoopsResets.add(slot);
+    if (game === 'track' && rejoin) trackCancellations.add(slot);
+    if (game === 'blitz') {
+      if (rejoin && blitzActivity.has(slot)) canceledInputs.add(slot);
+      else if (!rejoin) blitzActivity.delete(slot);
+    }
+    aimInputs.delete(slot);
+    sentInfo.delete(slot);
+    if (game === 'bedrock') canceledInputs.delete(slot);
+    bedrockHeartbeats.delete(slot);
+  });
+  room.on('leave', ({slot, reason}) => {
+    if ((game === 'ringout' || game === 'hoops') && reason === 'kicked') playerIds.delete(slot);
+    ringoutHeartbeats.delete(slot);
+    ringoutNeutralizing.delete(slot);
+    hoopsPulses.delete(slot);
+    hoopsExpired.delete(slot);
+    hoopsNeutralizing.delete(slot);
+    trackCancellations.delete(slot);
+    trackPulses.delete(slot);
+    aimInputs.delete(slot);
+    sentInfo.delete(slot);
+    if (game === 'bedrock') canceledInputs.delete(slot);
+    bedrockHeartbeats.delete(slot);
+  });
+  room.on('message', ({slot, data}) => {
+    if (game === 'ringout' && data?.ringoutActive === true) ringoutHeartbeats.set(slot, performance.now());
+    if (game === 'ringout' && data?.cancel === true) {
+      inputResets.add(slot);
+      aimInputs.delete(slot);
+    }
+    if (game === 'ringout' && data?.leave === true) playerIds.delete(slot);
+    if (data?.ready === true) sentInfo.delete(slot);
+    if (game === 'hoops') {
+      if (data?.hoopsPulse === true) hoopsPulses.set(slot, performance.now());
+      if (data?.hoopsCancel === true) hoopsResets.add(slot);
+    }
+    if (game === 'bedrock' && data?.bedrock && room.connected(slot)) {
+      if (data.bedrock.live === false) {
+        bedrockHeartbeats.set(slot, -Infinity);
+        canceledInputs.add(slot);
+      }
+      if (data.bedrock.live === true) {
+        if (bedrockHeartbeats.has(slot) && performance.now()-bedrockHeartbeats.get(slot)>1250) canceledInputs.add(slot);
+        bedrockHeartbeats.set(slot, performance.now());
+      }
+      const index = playerIds.get(slot);
+      if (index !== undefined) bedrockMessage?.(index, data.bedrock);
+    }
+    if (game === 'track') {
+      if (data?.trackCancel === true) trackCancellations.add(slot);
+      if (data?.trackPulse === true) trackPulses.set(slot, performance.now());
+    }
+    if (game === 'blitz') {
+      if (typeof data?.blitzActive === 'boolean') {
+        const previous = blitzActivity.get(slot);
+        if (!data.blitzActive || (previous && (!previous.active || performance.now() - previous.at > 1400))) {
+          canceledInputs.add(slot);
+        }
+        blitzActivity.set(slot, {active: data.blitzActive, at: performance.now()});
+      }
+      if (data?.blitzCancel === true) canceledInputs.add(slot);
+      if (data?.blitzLeave === true) playerIds.delete(slot);
+      if (data?.blitzPlay && room.connected(slot) && blitzActivity.get(slot)?.active) {
+        onBlitzCommand?.(playerIds.get(slot), data.blitzPlay);
+        sentInfo.delete(slot);
+      }
+    }
+    const aim = data?.aim;
+    if (game === 'ringout' && Array.isArray(aim) && aim.length === 2 && aim.every(Number.isFinite)) {
+      aimInputs.set(slot, aim.map(axis => Math.max(-1, Math.min(1, axis))));
+    }
+  });
+})();
 
-  const dialog = document.createElement('dialog');
-  dialog.id = 'couch-joinstick-dialog';
-  dialog.setAttribute('aria-labelledby', 'couch-joinstick-title');
-  dialog.innerHTML = `
-    <style>
-      #couch-joinstick-dialog { width: min(24rem, 90vw); color: #fff; background: #19212d;
-        border: 1px solid #59677b; border-radius: 12px; padding: 20px; text-align: center; }
-      #couch-joinstick-dialog:modal { overscroll-behavior: contain; }
-      #couch-joinstick-dialog::backdrop { overflow: hidden; overscroll-behavior: contain; background: #0009; }
-      #couch-joinstick-dialog h2 { margin: 0; font: 700 1.25rem system-ui; }
-      #couch-joinstick-dialog a { display: inline-block; color: #c8e4ff; }
-      #couch-joinstick-dialog img { display: block; margin-inline: auto; background: #fff; }
-      #couch-joinstick-dialog [hidden] { display: none; }
-      #couch-joinstick-dialog button { margin: 4px; }
-    </style>
-    <h2 id="couch-joinstick-title">Phone controllers</h2>
-    <p role="status">Start a room, then scan the QR code with your phone’s camera.</p>
-    <p id="couch-joinstick-invite" hidden>
-      <img alt="Scan to open the Joinstick controller" width="192" height="192">
-      <a target="_blank" rel="noopener noreferrer">Open phone invite</a>
-      <button type="button" id="couch-joinstick-copy" hidden>Copy invite</button>
-    </p>
-    <form method="dialog">
-      <button type="button" id="couch-joinstick-start" autofocus>Start room</button>
-      <button type="button" id="couch-joinstick-stop" hidden>Disconnect room</button>
-      <button>Close</button>
-    </form>`;
-  document.body.append(dialog);
+function setupLauncher(hostedPhone) {
+  const home = new URL('./', document.currentScript.src);
+  const main = document.querySelector('main');
+  const open = document.querySelector('#phone-pairing');
+  const dialog = document.querySelector('#phone-room');
   const status = dialog.querySelector('[role="status"]');
-  const invite = dialog.querySelector('#couch-joinstick-invite');
+  const invite = dialog.querySelector('.invite');
   const qr = invite.querySelector('img');
   const link = invite.querySelector('a');
-  const copy = invite.querySelector('#couch-joinstick-copy');
-  const start = dialog.querySelector('#couch-joinstick-start');
-  const stop = dialog.querySelector('#couch-joinstick-stop');
+  const copy = document.querySelector('#copy-phone-invite');
+  const start = dialog.querySelector('#start-phone-room');
+  const stop = dialog.querySelector('#stop-phone-room');
+  const links = [...main.querySelectorAll('.game')];
+  const gameKeys = links.map(link => link.dataset.game);
+  const ready = new Set();
+  let room, frame, game, selected, listeners;
 
-  function update() {
-    const connected = room?.status === 'connected';
-    invite.hidden = !connected;
-    if (connected) {
-      const relay = new URL(couchJoinstickPublicUrl ?? couchJoinstickServer);
-      const joinUrl = new URL(room.joinUrl());
-      // A reverse proxy may terminate TLS before Joinstick sees the request.
-      const inviteUrl = drawQr
-        ? new URL(hostedPhone ?? '/phone/', relay.protocol === 'https:' ? relay : joinUrl)
-        : joinUrl;
-      if (drawQr) {
-        inviteUrl.searchParams.set('g', game);
-        inviteUrl.searchParams.set('r', room.code);
-      }
-      link.href = inviteUrl.href;
-      if (qr.dataset.invite !== link.href) {
-        qr.dataset.invite = link.href;
-        qr.hidden = false;
-        qr.src = drawQr ? 'data:image/svg+xml,' + encodeURIComponent(drawQr(link.href, {border: 4})) : room.qr();
-      }
-      const count = [...playerIds.keys()].filter(slot => room.connected(slot)).length;
-      const access = inviteUrl.protocol === 'https:' ? 'Internet invite' : 'Local Wi-Fi invite';
-      status.textContent = `${access} · ${count} of ${room.slots} phones connected. Scan the code, then press ${drawQr ? 'Join' : 'A'} on the controller.`;
-    } else if (room) {
-      status.textContent = 'Reconnecting to Joinstick…';
+  open.hidden = false;
+  open.onclick = () => dialog.showModal();
+  copy.hidden = !navigator.clipboard?.writeText;
+  copy.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(link.href);
+      copy.textContent = 'Copied';
+    } catch {
+      copy.textContent = 'Copy unavailable';
     }
+  };
+
+  function showGame(next, gameLink) {
+    frame?.remove();
+    frame = undefined;
+    listeners = undefined;
+    game = next;
+    ready.clear();
+    main.hidden = Boolean(next);
+    if (next) {
+      selected = gameLink;
+      frame = document.createElement('iframe');
+      frame.className = 'game-frame';
+      frame.title = gameLink.querySelector('.title').textContent;
+      frame.allow = 'gamepad; fullscreen';
+      frame.src = gameLink.href;
+      document.body.append(frame);
+      frame.focus();
+    } else {
+      selected?.focus();
+    }
+    room?.broadcast({couchGame: game});
   }
 
-  function disconnect(message) {
+  window.couchPartyLauncher = {
+    attach(child, key) {
+      if (!frame || child !== frame.contentWindow || key !== game || !room) return;
+      const current = room;
+      const callbacks = listeners = {};
+      child.document.addEventListener('click', event => {
+        const anchor = event.target.closest?.('a[href]');
+        if (!anchor || event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey ||
+            event.shiftKey || event.altKey || new URL(anchor.href).href !== home.href) return;
+        event.preventDefault();
+        history.back();
+      });
+      return {
+        get slots() { return current.slots; },
+        get status() { return current.status; },
+        connected: slot => ready.has(slot) && current.connected(slot),
+        input: slot => current.input(slot),
+        send: (slot, data) => current.send(slot, data),
+        kick: slot => current.kick(slot),
+        on: (event, callback) => { callbacks[event] = callback; },
+      };
+    },
+  };
+
+  links.forEach((gameLink, index) => gameLink.addEventListener('click', event => {
+    if (!room || event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey ||
+        event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    history.pushState({couchGame: gameKeys[index]}, '', location.href);
+    showGame(gameKeys[index], gameLink);
+  }));
+  addEventListener('popstate', event => {
+    const index = gameKeys.indexOf(event.state?.couchGame);
+    if (room && index !== -1) showGame(gameKeys[index], links[index]);
+    else if (frame) showGame(null);
+  });
+
+  function updateCount() {
+    if (!room) return;
+    const count = Array.from({length: room.slots}, (_, i) => i + 1)
+      .filter(slot => room.connected(slot)).length;
+    status.textContent = room.status === 'connected'
+      ? `${count} of ${room.slots} phones connected. Scan once, then choose a game on this screen.`
+      : 'Reconnecting to the phone relay…';
+    open.textContent = count ? `Phone controllers (${count})` : 'Phone controllers';
+  }
+
+  function closeRoom(message) {
     const current = room;
     room = undefined;
     current?.close();
-    playerIds.clear();
-    aimInputs.clear();
-    sentInfo.clear();
-    trackCancellations.clear();
-    trackPulses.clear();
-    hoopsPulses.clear();
-    hoopsResets.clear();
-    hoopsExpired.clear();
-    hoopsNeutralizing.clear();
-    inputResets.clear();
-    ringoutHeartbeats.clear();
-    ringoutNeutralizing.clear();
-    bedrockHeartbeats.clear();
-    canceledInputs.clear();
-    blitzActivity.clear();
-    drawQr = undefined;
+    ready.clear();
+    if (frame) history.back();
     invite.hidden = stop.hidden = true;
     qr.removeAttribute('src');
-    delete qr.dataset.invite;
     link.removeAttribute('href');
     copy.textContent = 'Copy invite';
+    open.textContent = 'Phone controllers';
     start.hidden = start.disabled = false;
     status.textContent = message;
   }
 
-  qr.addEventListener('error', () => { qr.hidden = true; });
-  copy.hidden = !navigator.clipboard?.writeText;
-  copy.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(link.href);
-      if (room) copy.textContent = 'Copied';
-    } catch {
-      if (room) copy.textContent = 'Copy unavailable';
+  stop.onclick = () => {
+    for (let slot = 1; slot <= room.slots; slot++) {
+      if (room.connected(slot)) room.kick(slot);
     }
-  });
-  open.addEventListener('click', () => dialog.showModal());
-  open.addEventListener('keydown', event => {
-    if (game !== 'ringout' || ['Enter','Space'].includes(event.code)) event.stopPropagation();
-  });
-  dialog.addEventListener('keydown', event => event.stopPropagation());
-  stop.addEventListener('click', () => {
-    for (const slot of playerIds.keys()) if (room.connected(slot)) room.kick(slot);
-    disconnect('Room disconnected.');
+    closeRoom('Room disconnected. Start a new room to pair phones.');
     start.focus();
-  });
-  start.addEventListener('click', async () => {
+  };
+
+  start.onclick = async () => {
     start.disabled = true;
-    status.textContent = 'Connecting to Joinstick…';
+    status.textContent = hostedPhone ? 'Starting the phone relay. This can take about a minute…'
+      : 'Connecting to the phone relay…';
     try {
       const server = couchJoinstickServer;
       if (hostedPhone) {
-        status.textContent = 'Starting the phone relay. This can take about a minute…';
         const deadline = Date.now() + 90_000;
-        while (true) {
-          if (Date.now() >= deadline) throw new Error('The phone relay did not start in time.');
+        while (Date.now() < deadline) {
           try {
             const response = await fetch(server + '/phone/qr.js', {
               cache: 'no-store', signal: AbortSignal.timeout(Math.min(10_000, deadline - Date.now())),
@@ -275,116 +362,64 @@
             await response.body?.cancel();
             if (response.ok && response.headers.get('content-type')?.includes('javascript')) break;
           } catch {
-            // A sleeping relay may respond without CORS headers while it wakes up.
+            // The relay may answer without CORS headers while waking up.
           }
           await new Promise(resolve => setTimeout(resolve, 2500));
         }
+        if (Date.now() >= deadline) throw new Error('The phone relay did not start in time.');
       }
-      const [{host}, qrModule] = await Promise.all([
+      const [{host}, {renderSVG, maxPhoneConnections}] = await Promise.all([
         import(server + '/joinstick/host.js'),
-        import(server + '/phone/qr.js').catch(() => null),
+        import(server + '/phone/qr.js'),
       ]);
-      drawQr = qrModule?.renderSVG;
-      const slots = qrModule?.maxPhoneConnections ?? stockSlots;
-      const current = await host({server, slots, layout});
+      const layout = {
+        arrangement: 'arc',
+        stick: 'dpad',
+        buttons: [0, 1, 2, 3, 5, 7, 9].map(number => ({id: 'b' + number, label: String(number), system: number === 9})),
+      };
+      const current = await host({server, slots: maxPhoneConnections, layout});
       room = current;
-      for (let slot = 1; slot <= slots; slot++) {
-        if (current.connected(slot)) playerIds.set(slot, nextId++);
-      }
       current.on('join', ({slot, rejoin}) => {
-        if (!rejoin || !playerIds.has(slot)) playerIds.set(slot, nextId++);
-        else if (game === 'ringout') inputResets.add(slot);
-        if (game === 'hoops' && rejoin) hoopsResets.add(slot);
-        if (game === 'track' && rejoin) trackCancellations.add(slot);
-        if (game === 'blitz') {
-          if (rejoin && blitzActivity.has(slot)) canceledInputs.add(slot);
-          else if (!rejoin) blitzActivity.delete(slot);
-        }
-        aimInputs.delete(slot);
-        sentInfo.delete(slot);
-        if (game === 'bedrock') canceledInputs.delete(slot);
-        bedrockHeartbeats.delete(slot);
-        update();
+        ready.delete(slot);
+        current.send(slot, {couchGame: game ?? null});
+        listeners?.join?.({slot, rejoin});
+        updateCount();
       });
-      current.on('leave', ({slot, reason}) => {
-        if ((game === 'ringout' || game === 'hoops') && reason === 'kicked') playerIds.delete(slot);
-        ringoutHeartbeats.delete(slot);
-        ringoutNeutralizing.delete(slot);
-        hoopsPulses.delete(slot);
-        hoopsExpired.delete(slot);
-        hoopsNeutralizing.delete(slot);
-        trackCancellations.delete(slot);
-        trackPulses.delete(slot);
-        aimInputs.delete(slot);
-        sentInfo.delete(slot);
-        if (game === 'bedrock') canceledInputs.delete(slot);
-        bedrockHeartbeats.delete(slot);
-        update();
+      current.on('leave', event => {
+        ready.delete(event.slot);
+        listeners?.leave?.(event);
+        updateCount();
       });
-      current.on('message', ({slot, data}) => {
-        if (game === 'ringout' && data?.ringoutActive === true) ringoutHeartbeats.set(slot, performance.now());
-        if (game === 'ringout' && data?.cancel === true) {
-          inputResets.add(slot);
-          aimInputs.delete(slot);
-        }
-        if (game === 'ringout' && data?.leave === true) playerIds.delete(slot);
-        if (data?.ready === true) sentInfo.delete(slot);
-        if (game === 'hoops') {
-          if (data?.hoopsPulse === true) hoopsPulses.set(slot, performance.now());
-          if (data?.hoopsCancel === true) hoopsResets.add(slot);
-        }
-        if (game === 'bedrock' && data?.bedrock && current.connected(slot)) {
-          if (data.bedrock.live === false) {
-            bedrockHeartbeats.set(slot, -Infinity);
-            canceledInputs.add(slot);
+      current.on('message', event => {
+        const {slot, data} = event;
+        if (data?.ready) {
+          if (data.couchGame !== (game ?? null)) {
+            current.send(slot, {couchGame: game ?? null});
+            return;
           }
-          if (data.bedrock.live === true) {
-            if (bedrockHeartbeats.has(slot) && performance.now()-bedrockHeartbeats.get(slot)>1250) canceledInputs.add(slot);
-            bedrockHeartbeats.set(slot, performance.now());
-          }
-          const index = playerIds.get(slot);
-          if (index !== undefined) bedrockMessage?.(index, data.bedrock);
+          current.input(slot); // Clear presses queued before the new layout was ready.
+          ready.add(slot);
         }
-        if (game === 'track') {
-          if (data?.trackCancel === true) trackCancellations.add(slot);
-          if (data?.trackPulse === true) trackPulses.set(slot, performance.now());
-        }
-        if (game === 'blitz') {
-          if (typeof data?.blitzActive === 'boolean') {
-            const previous = blitzActivity.get(slot);
-            if (!data.blitzActive || (previous && (!previous.active || performance.now() - previous.at > 1400))) {
-              canceledInputs.add(slot);
-            }
-            blitzActivity.set(slot, {active: data.blitzActive, at: performance.now()});
-          }
-          if (data?.blitzCancel === true) canceledInputs.add(slot);
-          if (data?.blitzLeave === true) playerIds.delete(slot);
-          if (data?.blitzPlay && room.connected(slot) && blitzActivity.get(slot)?.active) {
-            onBlitzCommand?.(playerIds.get(slot), data.blitzPlay);
-            sentInfo.delete(slot);
-          }
-        }
-        const aim = data?.aim;
-        if (game === 'ringout' && Array.isArray(aim) && aim.length === 2 && aim.every(Number.isFinite)) {
-          aimInputs.set(slot, aim.map(axis => Math.max(-1, Math.min(1, axis))));
-        }
+        if (ready.has(slot) && game) listeners?.message?.(event);
       });
       current.on('status', value => {
         if (room !== current) return;
-        if (value === 'closed') disconnect('Joinstick closed the connection. Start a new room to play.');
-        else update();
+        if (value === 'closed') closeRoom('The relay closed this room. Start a new room to pair phones.');
+        else updateCount();
       });
+      const relay = new URL(couchJoinstickPublicUrl ?? server);
+      const inviteUrl = new URL(hostedPhone ?? '/phone/', relay.protocol === 'https:' ? relay : current.joinUrl());
+      inviteUrl.searchParams.set('g', 'lobby');
+      inviteUrl.searchParams.set('r', current.code);
+      link.href = inviteUrl.href;
+      qr.src = 'data:image/svg+xml,' + encodeURIComponent(renderSVG(link.href, {border: 4}));
+      invite.hidden = stop.hidden = false;
       start.hidden = true;
-      stop.hidden = false;
       if (dialog.open) stop.focus();
-      update();
+      updateCount();
     } catch (error) {
-      console.warn('Joinstick could not start:', error);
-      disconnect(hostedPhone ? 'Could not start a room. Wait a moment, then try again.'
-        : 'Could not start a room. Check that your Joinstick server is running and try again.');
+      console.warn('Phone room could not start:', error);
+      closeRoom('Could not start a phone room. Check that the Couch Party phone relay is running and try again.');
     }
-  });
-  window.addEventListener('pagehide', event => {
-    if (event.persisted && room) disconnect('Start a room to show a phone invite.');
-  });
-})();
+  };
+}
