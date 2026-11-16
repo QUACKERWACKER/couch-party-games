@@ -16,6 +16,7 @@
           <h1>Couch Party Controller</h1>
           <p id="status" role="status">Connecting…</p>
         </div>
+        <div id="system-buttons" role="group" aria-label="Match controls"></div>
         <div class="utilities">
           <span id="player" hidden></span>
           <button type="button" id="leave" hidden>Disconnect</button>
@@ -32,7 +33,6 @@
         </div>
         <div id="actions">
           <div id="face-buttons" role="group" aria-label="Game actions"></div>
-          <div id="utility-buttons" role="group" aria-label="Extra controls"></div>
         </div>
         <div class="stick-group" id="aim" hidden>
           <div class="stick" data-stick="aim" tabindex="0" role="group" aria-labelledby="aim-label" aria-describedby="aim-keys">
@@ -44,6 +44,7 @@
       </section>
       <footer class="controller-footer">
         <p id="hint" hidden></p>
+        <div id="utility-buttons" role="group" aria-label="Extra controls"></div>
       </footer>
     </main>
   </div>

@@ -180,7 +180,7 @@ function installAction(number, label) {
   caption.className = 'action-label';
   caption.textContent = label;
   element.append(caption);
-  $(face ? 'face-buttons' : 'utility-buttons').append(element);
+  $(number === 9 ? 'system-buttons' : face ? 'face-buttons' : 'utility-buttons').append(element);
   const action = {element, caption, pointer: null, held: false, keyboard: false, clickTimer: 0};
   actions.set(number, action);
   element.addEventListener('pointerdown', event => {
@@ -316,9 +316,15 @@ function updateBedrock(info) {
   const waitingForRound = info?.phase === 'play' && !hasSeat;
   const playing = info?.phase === 'play' && hasSeat;
   const inLobby = info?.phase === 'lobby' || info?.phase === 'result';
+  const mainAction = actions.get(0);
+  const group = $(info?.host && inLobby ? 'system-buttons' : 'face-buttons');
+  if (mainAction.element.parentElement !== group) {
+    if (mainAction.held) neutral();
+    group.prepend(mainAction.element);
+  }
   const labels = playing
     ? {0:'Dig', 1:'Fire', 2:'Summon', 3:'Upgrade', 5:'Pick minion', 7:'Pick upgrade'}
-    : {0: info?.host ? (info.phase === 'result' ? 'Rematch' : 'Start') : hasSeat || waitingForRound ? null : 'Join',
+    : {0: info?.host && inLobby ? (info.phase === 'result' ? 'Rematch' : 'Start') : hasSeat || waitingForRound ? null : 'Join',
        1: hasSeat ? 'Leave seat' : null, 2: info?.host && inLobby ? 'Match size' : null};
   for (const [number, action] of actions) {
     const label = labels[number];

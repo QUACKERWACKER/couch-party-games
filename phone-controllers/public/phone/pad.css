@@ -60,6 +60,7 @@ main {
   gap: clamp(10px, calc(var(--pad-height) * .03), 26px);
 }
 body[data-game] main {
+  --play-height: calc(max(var(--pad-height), 18rem) - max(12px, var(--safe-top)) - max(12px, var(--safe-bottom)) - 100px);
   min-height: max(var(--pad-height), 18rem);
   grid-template-rows: 48px minmax(0, 1fr) 44px;
   align-content: stretch;
@@ -79,6 +80,18 @@ body[data-game] #retry { grid-area: 2 / 1; place-self: center; }
 }
 header, .utilities { display: flex; align-items: center; gap: 10px; }
 header { justify-content: space-between; flex-wrap: wrap; }
+body[data-game] header { display: grid; grid-template-columns: minmax(0, 1fr) 7rem minmax(0, 1fr); }
+body[data-game] .utilities { justify-self: end; }
+#system-buttons { display: grid; grid-column: 2; }
+#system-buttons .action {
+  margin-inline: auto;
+  width: 100%;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: .82rem;
+}
+#system-buttons .face-letter { display: none; }
+main:has(#controls[hidden]) :is(#system-buttons, #utility-buttons) { visibility: hidden; }
 h1, p { margin: 0; }
 h1 { font-size: clamp(1.1rem, 4vmin, 1.7rem); letter-spacing: -.02em; }
 #status, #hint { color: var(--muted); font-size: .875rem; }
@@ -97,8 +110,7 @@ button {
 }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 #controls {
-  --face-size: clamp(50px, calc(var(--pad-height) * .174), 84px);
-  --face-spacing: calc(var(--face-size) * .81);
+  container-type: inline-size;
   grid-area: 2 / 1;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -114,12 +126,11 @@ body[data-game="track"] #controls { grid-template-columns: minmax(0, 1fr); }
 #aim { grid-area: 1 / 2; }
 #actions {
   grid-area: 1 / -2;
-  justify-self: stretch;
-  display: grid;
-  grid-template-rows: calc(var(--face-spacing) * 2 + var(--face-size)) 44px;
-  justify-items: center;
-  gap: 6px;
-  min-width: 0;
+  --face-size: clamp(56px, min(18cqw, calc(var(--play-height) / 2.62)), 108px);
+  --face-spacing: calc(var(--face-size) * .81);
+}
+body[data-game="ringout"] #actions {
+  --face-size: clamp(56px, min(12.2cqw, calc(var(--play-height) / 2.62)), 108px);
 }
 #face-buttons {
   display: grid;
@@ -148,7 +159,9 @@ body[data-game="track"] #controls { grid-template-columns: minmax(0, 1fr); }
 #utility-buttons {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  width: min(100%, 13rem);
+  width: min(38%, 13rem);
+  flex: none;
+  margin-inline-start: auto;
   gap: 6px;
 }
 #utility-buttons [data-action="5"] { grid-area: 1 / 1; }
@@ -166,20 +179,20 @@ body[data-game="track"] #controls { grid-template-columns: minmax(0, 1fr); }
   background: var(--panel);
   background: color-mix(in srgb, var(--face-color) 13%, var(--panel));
   box-shadow: inset 0 -3px 0 #0004;
-  font-size: clamp(.68rem, 2.6vmin, .96rem);
+  font-size: clamp(.75rem, 3.1vmin, 1.05rem);
   line-height: 1.05;
   text-align: center;
 }
 .face-letter { color: var(--face-color); font-size: .7rem; line-height: 1; }
 .action-label { min-width: 0; max-width: 100%; overflow-wrap: anywhere; text-wrap: balance; }
-#utility-buttons .action { border-radius: 999px; font-size: .75rem; padding: 4px; line-height: 1.12; }
-#controls .action.primary {
+#utility-buttons .action { touch-action: none; border-radius: 999px; font-size: .75rem; padding: 4px; line-height: 1.12; }
+:is(#controls, #system-buttons, #utility-buttons) .action.primary {
   --primary-color: var(--face-color, var(--accent));
   color: #141b22;
   border-color: var(--primary-color);
   background: var(--primary-color);
 }
-#controls .action:is(.held, :active) { color: #141b22; background: #fff; border-color: #fff; box-shadow: none; }
+:is(#controls, #system-buttons, #utility-buttons) .action:is(.held, :active) { color: #141b22; background: #fff; border-color: #fff; box-shadow: none; }
 .action:is(.primary, .held, :active) .face-letter { color: currentColor; }
 .stick-group { display: grid; width: 100%; justify-items: center; gap: 6px; }
 .stick-group b { font-size: .85rem; color: var(--muted); }
@@ -189,7 +202,7 @@ body[data-game="track"] #controls { grid-template-columns: minmax(0, 1fr); }
   position: relative;
   display: grid;
   place-items: center;
-  width: min(100%, calc(var(--pad-height) * .35), 190px);
+  width: min(100%, calc(var(--pad-height) * .47), calc(var(--play-height) - 24px), 230px);
   min-width: 80px;
   aspect-ratio: 1;
   border: 2px solid var(--edge);
@@ -209,7 +222,8 @@ body[data-game="track"] #controls { grid-template-columns: minmax(0, 1fr); }
 }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 body[data-game="track"] { --base: #21192b; --panel: #3c2c48; --edge: #786080; --accent: #d4fa87; }
-[data-game="bedrock"] #controls:has(.bedrock-picker:not([hidden])) #actions { display: none; }
+[data-game="bedrock"] main:has(.bedrock-picker:not([hidden])) :is(#actions, #utility-buttons) { visibility: hidden; }
+#utility-buttons:not(:has(.action:not([hidden]))) { display: none; }
 [data-game="bedrock"] .bedrock-picker {
   grid-area: 1 / -2;
   width: min(100%, 17rem);
