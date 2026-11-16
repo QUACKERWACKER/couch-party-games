@@ -13,7 +13,8 @@ const controllers = new Map();
 const joinHeld = new Set();
 const pendingJoins = new Map();
 const missingPads = new Map();
-const PAD_GRACE_MS = 750;
+const PAD_GRACE_MS = 750, PHONE_RESUME_MS = 12000;
+let playbookId=0;
 const helmetColors=['#f8edcf','#ffe06a','#ff926b','#f68db7','#bd9bff','#7aafff','#70e4eb','#9be990','#f4f5ff'];
 const bootColors=['#eee9d6','#ffdb62','#ff775e','#ff8ed1','#b49cff','#6ac4ff','#65e4c3','#b5eb69','#30343f'];
 const keyboardProfile={helmet:0,boot:0,position:null,seat:null,order:0,team:0,fieldSlot:0};
@@ -92,7 +93,7 @@ function joinedPlayers() {
   return joined.sort((a,b)=>a.entry.order-b.entry.order);
 }
 
-const host = () => joinedPlayers()[0]?.owner;
+const host = () => joinedPlayers().find(({entry})=>!entry.suspended)?.owner;
 const canStartFrom = owner => owner===host();
 const ordinals = ['1ST','2ND','3RD','4TH'];
 const keyboardCodes = ['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyJ','KeyK','KeyL','KeyI','Enter','Escape','KeyQ','KeyE','KeyR'];
@@ -164,12 +165,28 @@ function readInputs() {
   // Safari can temporarily omit a pad while the window gains focus.
   for (const index of new Set([...controllers.keys(),...joinHeld])) {
     if (!physicalReadable && index<1000) continue;
+    const entry=controllers.get(index);
     if (connected.has(index)) {
       missingPads.delete(index);
+      if (entry?.suspended) {
+        entry.suspended=false;
+        changed=true;
+      }
       continue;
     }
+    if (entry?.joinstick) {
+      const player=players.find(p=>p.owner===index);
+      if (player) player.aim=null;
+      if (!entry.suspended) {
+        entry.suspended=true;
+        entry.buttons=[];
+        entry.start=entry.rightBumper=false;
+        changed=true;
+      }
+    }
     if (!missingPads.has(index)) missingPads.set(index,now);
-    if (now-missingPads.get(index)<PAD_GRACE_MS) continue;
+    const grace=entry?.joinstick && window.couchJoinstick?.reserved(index) ? PHONE_RESUME_MS : PAD_GRACE_MS;
+    if (now-missingPads.get(index)<grace) continue;
     joinHeld.delete(index);
     pendingJoins.delete(index);
     missingPads.delete(index);
@@ -212,7 +229,7 @@ function readInputs() {
     const team=defaultTeam();
     const fieldSlot=freeTeamSlot(team);
     const rightBumper=!!pad.buttons[5]?.pressed;
-    controllers.set(pad.index,{seat,buttons,start,rightBumper,bumperSince:now,adjusted:rightBumper,order:nextJoinOrder++,team,fieldSlot,
+    controllers.set(pad.index,{seat,buttons,start,rightBumper,bumperSince:now,adjusted:rightBumper,order:nextJoinOrder++,team,fieldSlot,joinstick:pad.joinstick,
       profile:{helmet:0,boot:0,position:null}});
     changed=true;
     sound(720);
@@ -225,6 +242,16 @@ function readInputs() {
   for (const {pad,buttons,start} of samples) {
     const joined=controllers.get(pad.index);
     if (!joined) continue;
+    if (pad.inputCanceled && joined.joinstick) {
+      const player=players.find(p=>p.owner===pad.index);
+      if (player) player.aim=null;
+      joined.adjusted=true;
+      inputs.set(pad.index,empty);
+      joined.buttons=buttons;
+      joined.start=start;
+      joined.rightBumper=!!pad.buttons[5]?.pressed;
+      continue;
+    }
     const x=pad.axes[0] || 0, y=pad.axes[1] || 0;
     const useStick=Math.hypot(x,y)>.23;
     const edge=buttons.map((value,i)=>value&&!joined.buttons[i]);
@@ -351,6 +378,7 @@ function assignSeats() {
   }
   for (const p of players) {p.owner=null;p.label='';p.profile=null;}
   for (const {owner,entry} of joined) {
+    if (entry.suspended) continue;
     const {seat}=entry;
     const player=players[entry.team*7+entry.fieldSlot];
     const profile=owner==='keyboard' ? keyboardProfile : entry.profile;
@@ -388,6 +416,7 @@ function freshDrive(newTeam, at, temporary=false) {
 }
 
 function setFormation() {
+  playbookId++;
   passStats=null;
   phase = 'ready';
   pocketPressure=0;
@@ -2322,21 +2351,50 @@ function draw() {
   }
 }
 
+function choosePhonePlay(owner,choice) {
+  if (state!=='playing' || phase!=='ready' || owner==null || owner!==qb().owner) return;
+  const count=plays.length+Number(down===4);
+  if (choice.id!==playbookId || !Number.isInteger(choice.index) || choice.index<0 || choice.index>=count) return;
+  playIndex=choice.index;
+  positionFormation();
+  sound(590,.06);
+}
+
 function describePhones() {
   const labels={_open:14-controllers.size-Number(keyboard)};
   const currentHost=host();
   for (const p of players) {
     if (typeof p.owner!=='number' || p.owner<1000) continue;
     const captain=p===qb();
-    const special=captain && ['kickMeter','kickFlight','try'].includes(phase) ? phase : null;
-    const mode=state==='menu' ? 'lobby' : state==='paused' ? 'paused' : special ||
-      (p.team===team ? (captain && phase==='ready' ? 'ready' : 'offense') : 'defense');
-    labels[p.owner]={player:p.label,team:names[p.team],host:p.owner===currentHost,mode};
+    const onOffense=p.team===team;
+    const special=captain && ['kickMeter','try'].includes(phase) ? phase : null;
+    let mode;
+    if (state==='menu') mode='lobby';
+    else if (state==='paused') mode='paused';
+    else if (state==='over') mode='final';
+    else if (special) mode=special;
+    else if (phase==='ready') mode=onOffense ? (captain ? 'ready' : 'waiting') :
+      p===defenseCaptain() ? 'defenseReady' : 'waiting';
+    else if (phase!=='live' || wheel) mode='waiting';
+    else if (!onOffense) mode='defense';
+    else if (p===carrier && canPass(p)) mode='offense';
+    else if (p===carrier) mode='runner';
+    else mode='receiver';
+    const playbook=mode==='ready' ? {id:playbookId, selected:playIndex,
+      options:[...plays.map(play=>play.name),...(down===4 ? ['PUNT'] : [])]} : undefined;
+    labels[p.owner]={player:p.label,team:names[p.team],host:p.owner===currentHost,mode,playbook};
   }
   return labels;
 }
-window.blitzPhones?.describe(describePhones);
+window.blitzPhones?.describe(()=>{
+  const labels=describePhones();
+  for (const label of Object.values(labels)) {
+    if (label.mode==='kickMeter' || label.mode==='try') label.mode='kick';
+  }
+  return labels;
+});
 window.couchJoinstick?.describe(describePhones);
+window.couchJoinstick?.onBlitzCommand?.(choosePhonePlay);
 
 assignSeats();
 reset();

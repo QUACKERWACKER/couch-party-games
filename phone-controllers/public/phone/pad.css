@@ -105,3 +105,74 @@ button {
   [data-game="ringout"] #aim { grid-area: aim; }
   [data-game="ringout"] #actions { grid-area: buttons; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+body[data-game="track"] { --base: #21192b; --panel: #3c2c48; --edge: #786080; --accent: #d4fa87; }
+[data-game="track"] #controls { display: block; }
+[data-game="track"] #actions {
+  grid-template-areas: "stride turbo" "event trick" "team start";
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 34rem;
+  margin-inline: auto;
+}
+[data-game="track"] .action { font-size: clamp(.95rem, 4vmin, 1.2rem); }
+[data-game="track"] [data-action="0"] { grid-area: stride; }
+[data-game="track"] [data-action="1"] { grid-area: turbo; }
+[data-game="track"] [data-action="2"] { grid-area: trick; }
+[data-game="track"] [data-action="3"] { grid-area: event; }
+[data-game="track"] [data-action="5"] { grid-area: team; }
+[data-game="track"] [data-action="9"] { grid-area: start; }
+
+[data-game="ringout"] .action[hidden] { display: none; }
+[data-game="ringout"] .action[data-action="2"]:not([hidden]) { grid-column: span 2; }
+
+[data-game="hoops"] #actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+[data-game="hoops"] .action[data-action="0"] { order: 4; grid-column: 1 / -1; }
+[data-game="hoops"] .action[data-action="3"] { order: 2; }
+[data-game="hoops"] .action[data-action="1"] { order: 3; }
+[data-game="hoops"] .action[data-action="2"] { order: 5; grid-column: 1 / -1; }
+[data-game="hoops"] .action[data-action="5"], [data-game="hoops"] .action[data-action="9"] {
+  min-height: 44px;
+  order: 1;
+}
+[data-game="hoops"] .action[aria-disabled="true"] { opacity: .35; }
+
+[data-game="bedrock"] #controls { position: relative; }
+[data-game="bedrock"] #controls[data-phase="lobby"] { grid-template-columns: 1fr; }
+[data-game="bedrock"] #actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+[data-game="bedrock"] #actions [data-action="0"],
+[data-game="bedrock"] #actions [data-action="1"] {
+  min-height: clamp(56px, 17vh, 90px);
+  font-size: 1rem;
+}
+[data-game="bedrock"] #controls[data-phase="play"] [data-action="1"]:not(.held) {
+  background: #ffad8c; color: var(--base); border-color: #ffad8c;
+}
+[data-game="bedrock"] .bedrock-picker {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: calc((100% - clamp(10px, 3vw, 28px)) * .5652);
+  display: grid;
+  align-content: center;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+  background: var(--base);
+}
+.bedrock-picker b, .bedrock-picker button:last-child { grid-column: 1 / -1; }
+.bedrock-picker button { font-size: .78rem; overflow-wrap: anywhere; }
+.bedrock-picker button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+@media (orientation: portrait) {
+  [data-game="bedrock"] .bedrock-picker { width: calc((100% - 10px) * .55); }
+}
+
+/* Blitz keeps the main actions under the right thumb in either orientation. */
+[data-game="blitz"] #controls { -webkit-touch-callout: none; }
+[data-game="blitz"] #actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+[data-game="blitz"] [data-control="0"] { grid-column: 1 / -1; }
+[data-game="blitz"] [data-control="5"], [data-game="blitz"] [data-control="9"] {
+  grid-row: 4; min-height: 44px; font-size: .75rem;
+}
+[data-game="blitz"] .action[aria-disabled="true"] { opacity: .37; cursor: default; }
+#blitz-playbook { padding: 9px 12px; border: 1px solid var(--edge); border-radius: 9px; background: var(--panel); }
+#blitz-playbook summary { min-height: 32px; padding-block: 5px; cursor: pointer; color: var(--accent); }
+#blitz-playbook select { width: 100%; min-height: 44px; font: inherit; margin-top: 6px; }

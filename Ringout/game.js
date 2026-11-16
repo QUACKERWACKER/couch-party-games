@@ -1079,7 +1079,7 @@ function gamepads() {
   }
   for (const slot of previous.keys()) if (slot >= 0 && !byIndex.has(slot)) previous.delete(slot);
   if (state === 'menu') {
-    const available = slots.filter(slot => slot < 0 || byIndex.has(slot));
+    const available = slots.filter(slot => slot < 0 || byIndex.has(slot) || window.couchJoinstick?.reserved(slot));
     if (available.length !== slots.length) {
       for (const slot of slots) {
         if (available.includes(slot)) continue;
@@ -1092,7 +1092,7 @@ function gamepads() {
   }
   for (const pad of pads) {
     if (pad.mapping !== 'standard') continue;
-    const active = Math.hypot(pad.axes[0] || 0, pad.axes[1] || 0) > .48 ||
+    const active = pad.phone && !slots.includes(pad.index) ? Boolean(pad.buttons[0]?.pressed) : Math.hypot(pad.axes[0] || 0, pad.axes[1] || 0) > .48 ||
       pad.buttons.some(button => button.pressed);
     if (active && !joinMotion.has(pad.index) && state === 'menu' && !editingMode && join(pad.index)) {
       // Consume the joining input so it cannot also activate a menu control.
@@ -1117,7 +1117,7 @@ function readInput(i, pad) {
   y = y * scale + button(13) - button(12) + Number(keys.has(down)) - Number(keys.has(up));
   const limit = Math.max(1, Math.hypot(x, y));
   const padButtons = Array.from(pad?.buttons || [], b => Boolean(b.pressed));
-  if (bindingController && pad) {
+  if (bindingController && pad && !pad.phone) {
     const choice=controllerTrickButtons.find(n=>padButtons[n] && !prior?.padButtons[n]);
     if (choice!==undefined) {
       trickBindings.set(slot,choice);
@@ -1127,10 +1127,10 @@ function readInput(i, pad) {
     }
   }
   const held = { any: padButtons.some((down, index) => down && !prior?.padButtons[index]),
-    trick: keys.has(trickBindings.get(slot) || defaultTrick.get(slot)) || button(typeof trickBindings.get(slot)==='number' ? trickBindings.get(slot) : 5), accessory: button(1), emote: keys.has(emote) || button(3), dodge: keys.has(dodge) || button(1), up: y < -.55, down: y > .55, dash: keys.has(dash) || button(0), push: keys.has(push) || button(2), start: button(9), left: x < -.55, right: x > .55 };
+    trick: keys.has(trickBindings.get(slot) || defaultTrick.get(slot)) || button(!pad?.phone && typeof trickBindings.get(slot)==='number' ? trickBindings.get(slot) : 5), accessory: button(1), emote: keys.has(emote) || button(3), dodge: keys.has(dodge) || button(1), up: y < -.55, down: y > .55, dash: keys.has(dash) || button(0), push: keys.has(push) || button(2), start: button(9), left: x < -.55, right: x > .55 };
   const aimX=pad?.axes[2] || 0, aimY=pad?.axes[3] || 0;
   const dedicated=Math.hypot(aimX,aimY)>.24;
-  const input = { x: x / limit, y: y / limit,aimX:dedicated?aimX:undefined,aimY:dedicated?aimY:undefined, charging: Boolean(held.push), inputLost: slot >= 0 && !pad, dashHeld: Boolean(held.dash) };
+  const input = { x: x / limit, y: y / limit,aimX:dedicated?aimX:undefined,aimY:dedicated?aimY:undefined, charging: Boolean(held.push), inputLost: slot >= 0 && (!pad || pad.inputReset), dashHeld: Boolean(held.dash) };
   for (const name of Object.keys(held)) input[name] = held[name] && !prior?.[name];
   input.any = held.any;
   previous.set(slot, {...held, padButtons});
@@ -2170,6 +2170,7 @@ function move(inputs, dt) {
       p.charge = 0;
       p.fullSince = undefined;
       p.pushReleaseAt = undefined;
+      p.superCharge = p.superWindow = 0;
     }
     p.slide = Math.max(0, p.slide - dt);
     p.frozen = Math.max(0, (p.frozen || 0) - dt);
@@ -2736,7 +2737,8 @@ get('pauseMenu').addEventListener('click', () => {
 });
 
 function canStart(options) {
-  const count = state === 'match' ? slots.filter(slot => slot < 0 || connectedPads.has(slot)).length : slots.length;
+  const count = slots.filter(slot => slot < 0 || connectedPads.has(slot) ||
+    (state !== 'match' && !window.couchJoinstick?.reserved(slot))).length;
   return count >= minimumPlayers(options);
 }
 
@@ -3308,6 +3310,42 @@ function drawLobbyEmotes(now) {
     preview.restore();
   });
 }
+
+function describeRingoutPhones() {
+  const descriptions = {};
+  for (const [slot] of connectedPads) {
+    if (!window.couchJoinstick.label(slot)) continue;
+    const i = slots.indexOf(slot);
+    const player = i < 0 ? '' : 'Player ' + (i + 1);
+    const describe = (buttons, primary, hint) => { descriptions[slot] = {player,buttons,primary,hint}; };
+    if (i < 0) {
+      describe(state === 'menu' && !editingMode ? {0:'Join'} : {}, 0,
+        state === 'menu' && !editingMode ? 'Tap Join to claim a fighter.' : 'You can join from the lobby.');
+    } else if (isLobby() && setup) {
+      describe({0:'Select',1:'Next tab',9:readyPlayers.has(slot)?'Unready':'Ready'},9,'Move to browse your fighter’s options.');
+    } else if (state === 'kineticDraft' || state === 'draft') {
+      const card = state === 'kineticDraft'
+        ? kineticDraft?.picks[i]?.offers[kineticDraft?.picks[i]?.selected]
+        : draftQueue[0] === i && draftHandoffAt === null ? choices[selected] : null;
+      const ready = state === 'kineticDraft' && kineticDraft?.picks[i]?.done;
+      const unlocked = performance.now() >= (state === 'kineticDraft' ? kineticDraft.lockedUntil : transitionTime);
+      describe(card && !ready && unlocked ? (startingDraft && rules.divergence ? {0:'Pick',5:'Try Trick'} : {0:'Pick'}) : {},0,
+        card && !ready ? card[0] + ' · ' + card[2] : 'Waiting for upgrades. Watch the shared screen.');
+    } else if (state === 'countdown') {
+      describe({},0,'Get ready. Watch the arena.');
+    } else if (state === 'playing') {
+      const trick = rules.divergence && builds[i]?.[0];
+      describe({0:'Dash',1:'Dodge / parry',2:'Push',3:'Emote',...(trick ? {5:'Trick'} : {}),9:'Pause'},2,
+        'Hold Push to charge. Aim with the right stick, then release.');
+    } else if (state === 'round') {
+      describe({0:'Continue'},0,'Look at the shared screen for the next round.');
+    } else {
+      describe({0:'Select',...(state === 'paused' ? {9:'Resume'} : {})},0,'Use Move to browse the shared screen.');
+    }
+  }
+  return descriptions;
+}
+window.couchJoinstick?.describe(describeRingoutPhones);
 
 function frame(now) {
   const dt = Math.min(.025, (now - (last || now)) / 1000);

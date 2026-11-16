@@ -218,11 +218,15 @@ function overlay() {
     const count=size-roster.filter(p=>p.side===side).length;
     if (count && host) badge(count+' CPU · '+names[side],side);
   }
+  const hostOnPhone=roster.some(p=>p.id===host && p.phone);
+  const action=won ? 'Rematch' : 'Start';
   const confirm=host==='keyboard' ? 'Enter / Z' : 'A / ✕';
-  ui.prompt.textContent=host ? 'Host · '+confirm+(won ? ' rematch' : ' start') : 'Press any face button to join';
+  ui.prompt.textContent=!host ? 'Press any face button to join'
+    : hostOnPhone ? 'Host · '+action+' on phone' : 'Host · '+confirm+' '+action.toLowerCase();
   ui.hint.textContent=roster.some(p=>p.id==='keyboard') ?
     'Arrows move / aim · Z dig · X fire · C summon · V upgrade · A / S select · '+size+'v'+size+' · Host C to change size' :
-    host ? size+'v'+size+' · Host X / □ to change size · B / ○ to leave' : 'Keyboard optional · Enter to join';
+    host ? size+'v'+size+(hostOnPhone ? ' · Host changes size on phone' : ' · Host X / □ to change size · B / ○ to leave')
+      : 'Keyboard optional · Enter to join';
 }
 function teamSize() {
   return Math.max(seatsPerTeam,...[0,1].map(side=>roster.filter(p=>p.side===side).length));
@@ -230,8 +234,14 @@ function teamSize() {
 function smallerSide() {
   return Number(roster.filter(p=>p.side===0).length>roster.length/2);
 }
+function unseat(id) {
+  roster=roster.filter(p=>p.id!==id);
+  if (id===host) host=roster[0]?.id ?? null;
+  overlay();
+}
+
 function menu(current) {
-  const keep=roster.filter(p=>current.has(p.id));
+  const keep=roster.filter(p=>current.has(p.id) || (p.phone && window.couchJoinstick?.label(p.index)));
   if (keep.length!==roster.length) {
     roster=keep;
     if (!roster.some(p=>p.id===host)) host=roster[0]?.id ?? null;
@@ -244,18 +254,21 @@ function menu(current) {
     if (!known && control.join && !was.join) {
       if (!previous.has(id) && id!=='keyboard' && control.b[0] && performance.now()<400 && document.referrer) continue;
       if (!roster.length) sequence=0;
-      roster.push({id,number:++sequence,side:smallerSide()});
+      const index=id==='keyboard' ? null : Number(id.slice(4));
+      roster.push({id,index,phone:Boolean(window.couchJoinstick?.label(index)),number:++sequence,side:smallerSide()});
       host ??= id;
       overlay();
     } else if (known) {
       if (pressed(control,1,was)) {
-        roster=roster.filter(p=>p.id!==id);
-        if (id===host) host=roster[0]?.id ?? null;
-        overlay();
+        unseat(id);
       } else if (id===host && pressed(control,2,was)) {
         seatsPerTeam=seatsPerTeam===1 ? 2 : 1;
         overlay();
-      } else if (id===host && (pressed(control,0,was) || (id==='keyboard' && control.join && !was.join))) start=true;
+      } else if ((id===host || !current.has(host)) &&
+          (pressed(control,0,was) || (id==='keyboard' && control.join && !was.join))) {
+        host=id;
+        start=true;
+      }
     }
   }
   if (start && host) startMatch();
@@ -704,7 +717,11 @@ function step(current,dt,prior=previous) {
     }
   }
   for (const team of teams) team.ore+=dt*.22;
-  for (const p of players) updatePlayer(p,current.get(p.id) ?? bot(p),prior.get(p.id) ?? empty,dt);
+  for (const p of players) {
+    const control=p.phoneLeft ? undefined : current.get(p.id);
+    if (!control && p.phone) p.picker=null;
+    updatePlayer(p,control ?? (p.phone ? empty : bot(p)),prior.get(p.id) ?? empty,dt);
+  }
   updateUnits(dt);
   updateShots(dt);
   updateSupply(dt);
@@ -912,5 +929,43 @@ function frame(now) {
   dashboard();
   requestAnimationFrame(frame);
 }
+function describePhones() {
+  const descriptions={_default:{phase:mode}};
+  for (const seat of roster) {
+    if (!seat.phone) continue;
+    const player=mode==='play' ? players.find(p=>p.id===seat.id) : null;
+    const info={player:'P'+seat.number,team:names[seat.side],phase:mode,host:seat.id===host};
+    if (player) {
+      info.minion=player.minion;
+      info.upgrade=player.upgrade;
+      info.minions=minionTypes.map(({name,cost})=>({name,cost}));
+      info.upgrades=upgradeTypes.map(({name},i)=>{
+        const level=player.level[i];
+        return {name,cost:level===2 ? 'Max' : upgradeCost(level)};
+      });
+    } else info.size=teamSize();
+    descriptions[seat.index]=info;
+  }
+  return descriptions;
+}
+
+window.couchJoinstick?.describe(describePhones);
+window.couchJoinstick?.onBedrockMessage?.((index, data)=>{
+  const id='pad:'+index;
+  if (data.leave === true) {
+    unseat(id);
+    const player=players.find(p=>p.id===id);
+    if (player && mode==='play') player.phoneLeft=true;
+    return;
+  }
+  if (mode!=='play') return;
+  const player=players.find(p=>p.id===id && p.phone && !p.phoneLeft);
+  if (!player) return;
+  const {kind,choice}=data;
+  const options=kind==='minion' ? minionTypes : kind==='upgrade' ? upgradeTypes : null;
+  if (!options || !Number.isInteger(choice) || choice<0 || choice>=options.length) return;
+  player[kind]=choice;
+  note(player,options[choice].blurb);
+});
 overlay();
 requestAnimationFrame(frame);

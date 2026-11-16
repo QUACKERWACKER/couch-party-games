@@ -6,10 +6,10 @@
     ? new URL('./phone/', document.currentScript.src) : null;
   const game = document.currentScript.dataset.game;
   const layouts = {
-    blitz: {slots: 8, labels: {0: 'A', 1: 'B', 2: 'X', 3: 'Y', 5: 'Team/RB', 9: 'Start'}},
+    blitz: {slots: 8, labels: {0: 'Join', 1: 'Sprint', 2: 'Dash', 3: 'Kick', 5: 'Team/CPU', 9: 'Start'}},
     hoops: {slots: 6, labels: {0: 'Shoot/A', 1: 'Turbo/B', 2: 'Swipe/X', 3: 'Pass/Y', 5: 'Team/RB', 9: 'Start'}},
-    track: {slots: 8, labels: {0: 'Stride/A', 1: 'Turbo/B', 2: 'Trick/X', 3: 'Event/Y', 5: 'Team/RB', 9: 'Start'}},
-    bedrock: {slots: 8, labels: {0: 'Dig/A', 1: 'Fire/B', 2: 'Summon/X', 3: 'Buy/Y', 4: 'Jet/LB', 5: 'Minion', 7: 'Upgrade'}},
+    track: {slots: 8, labels: {0: 'Join / A', 1: 'Turbo', 2: 'Trick', 3: 'Event', 5: 'Team', 9: 'Start'}},
+    bedrock: {slots: 8, labels: {0: 'Dig', 1: 'Fire', 2: 'Summon', 3: 'Upgrade', 5: 'Minion', 7: 'Pick kit'}},
     ringout: {slots: 8, labels: {0: 'Dash/A', 1: 'Dodge/B', 2: 'Push/X', 3: 'Emote/Y', 5: 'Trick/RB', 9: 'Start'}},
   };
   const {slots: stockSlots, labels} = layouts[game];
@@ -22,44 +22,111 @@
   const playerIds = new Map();
   const aimInputs = new Map();
   const sentInfo = new Map();
+  const trackCancellations = new Set();
+  const trackPulses = new Map();
+  const hoopsPulses = new Map();
+  const hoopsResets = new Set();
+  const hoopsExpired = new Set();
+  const hoopsNeutralizing = new Set();
+  const inputResets = new Set();
+  const ringoutHeartbeats = new Map();
+  const ringoutNeutralizing = new Set();
+  const canceledInputs = new Set();
+  const blitzActivity = new Map();
   let nextId = 1_000_000;
   let room;
   let drawQr;
   let describe;
+  let onBlitzCommand;
+  let bedrockMessage;
+  const bedrockHeartbeats = new Map();
 
   window.couchJoinstick = {
     describe(callback) { describe = callback; },
+    onBlitzCommand(callback) { onBlitzCommand = callback; },
+    onBedrockMessage(callback) { bedrockMessage = callback; },
     sample() {
       if (room?.status !== 'connected') return [];
       const pads = [];
       const labels = drawQr && describe?.();
       for (const [slot, index] of playerIds) {
         if (!room.connected(slot)) continue;
+        const activity = blitzActivity.get(slot);
+        if (activity && (!activity.active || performance.now() - activity.at > 1400)) {
+          room.input(slot);
+          continue;
+        }
         if (labels) {
-          const blitz = labels[index] ?? null;
-          const info = JSON.stringify(blitz);
+          const description = labels[index] ?? labels._default ?? null;
+          const info = JSON.stringify(description);
           if (info !== sentInfo.get(slot)) {
-            room.send(slot, {blitz});
+            room.send(slot, {[game]: description});
             sentInfo.set(slot, info);
           }
         }
         const input = room.input(slot);
+        const trackPulse = trackPulses.get(slot);
+        if (trackPulse !== undefined && performance.now() - trackPulse > 1400) {
+          trackCancellations.add(slot);
+          continue;
+        }
+        const trackCanceled = trackCancellations.has(slot);
+        if (trackCanceled && !Object.values(input.buttons).some(Boolean)) trackCancellations.delete(slot);
+        const lastBeat = ringoutHeartbeats.get(slot);
+        if (lastBeat !== undefined && performance.now() - lastBeat > 1500) {
+          inputResets.add(slot);
+          aimInputs.delete(slot);
+          continue;
+        }
+        const reset = inputResets.delete(slot);
+        if (game === 'ringout' && reset) ringoutNeutralizing.add(slot);
+        const suppressRingout = ringoutNeutralizing.has(slot);
+        if (suppressRingout && !input.x && !input.y && !Object.values(input.buttons).some(Boolean)) {
+          ringoutNeutralizing.delete(slot);
+        }
+        const pulse = hoopsPulses.get(slot);
+        const expired = game === 'hoops' && pulse !== undefined && performance.now() - pulse > 1600;
+        const resetInputs = game === 'hoops' && (hoopsResets.delete(slot) || (expired && !hoopsExpired.has(slot)));
+        if (expired) hoopsExpired.add(slot);
+        else hoopsExpired.delete(slot);
+        if (resetInputs) hoopsNeutralizing.add(slot);
+        if (!input.x && !input.y && !Object.values(input.buttons).some(Boolean)) hoopsNeutralizing.delete(slot);
+        const suppressHoops = expired || resetInputs || hoopsNeutralizing.has(slot);
+        if (bedrockHeartbeats.has(slot) && performance.now()-bedrockHeartbeats.get(slot)>1250) {
+          canceledInputs.add(slot);
+          continue;
+        }
+        if (game === 'bedrock' && canceledInputs.has(slot)) {
+          if (input.x || input.y || Object.values(input.buttons).some(Boolean)) continue;
+          canceledInputs.delete(slot);
+          continue;
+        }
+        const inputCanceled = canceledInputs.has(slot);
+        if (inputCanceled && !buttonMap.some(([number]) => input.buttons['b' + number])) {
+          canceledInputs.delete(slot);
+        }
         const buttons = Array.from({length: 17}, () => ({pressed: false, value: 0}));
         for (const [number] of buttonMap) {
           const id = 'b' + number;
           // Keep a tap that began and ended between two game frames.
-          const pressed = Boolean(input.buttons[id] || input.pressed[id]);
+          const pressed = !trackCanceled && !inputCanceled && !suppressRingout && !suppressHoops && Boolean(input.buttons[id] || input.pressed[id]);
           buttons[number] = {pressed, value: Number(pressed)};
         }
         pads.push({index, mapping: 'standard', connected: true, timestamp: performance.now(),
-          axes: [input.x, input.y, ...(aimInputs.get(slot) ?? [0, 0])], buttons});
+          ...(game === 'track' ? {inputCanceled: trackCanceled} : {}),
+          ...(game === 'blitz' ? {joinstick: true, inputCanceled} : {}),
+          axes: suppressRingout || suppressHoops ? [0, 0, 0, 0] : [input.x, input.y, ...(aimInputs.get(slot) ?? [0, 0])], buttons,
+          ...(game === 'ringout' ? {phone: true, inputReset: suppressRingout} : {}),
+          ...(game === 'hoops' ? {source: 'joinstick', resetInputs} : {})});
       }
       return pads;
     },
+    reserved(index) { return Boolean(room && [...playerIds.values()].includes(index)); },
     kick(index) {
       for (const [slot, id] of playerIds) {
         if (id !== index) continue;
         room.kick(slot);
+        if (game === 'ringout' || game === 'blitz') playerIds.delete(slot);
         return true;
       }
       return false;
@@ -149,6 +216,18 @@
     playerIds.clear();
     aimInputs.clear();
     sentInfo.clear();
+    trackCancellations.clear();
+    trackPulses.clear();
+    hoopsPulses.clear();
+    hoopsResets.clear();
+    hoopsExpired.clear();
+    hoopsNeutralizing.clear();
+    inputResets.clear();
+    ringoutHeartbeats.clear();
+    ringoutNeutralizing.clear();
+    bedrockHeartbeats.clear();
+    canceledInputs.clear();
+    blitzActivity.clear();
     drawQr = undefined;
     invite.hidden = stop.hidden = true;
     qr.removeAttribute('src');
@@ -170,7 +249,9 @@
     }
   });
   open.addEventListener('click', () => dialog.showModal());
-  open.addEventListener('keydown', event => event.stopPropagation());
+  open.addEventListener('keydown', event => {
+    if (game !== 'ringout' || ['Enter','Space'].includes(event.code)) event.stopPropagation();
+  });
   dialog.addEventListener('keydown', event => event.stopPropagation());
   stop.addEventListener('click', () => {
     for (const slot of playerIds.keys()) if (room.connected(slot)) room.kick(slot);
@@ -212,17 +293,77 @@
       }
       current.on('join', ({slot, rejoin}) => {
         if (!rejoin || !playerIds.has(slot)) playerIds.set(slot, nextId++);
+        else if (game === 'ringout') inputResets.add(slot);
+        if (game === 'hoops' && rejoin) hoopsResets.add(slot);
+        if (game === 'track' && rejoin) trackCancellations.add(slot);
+        if (game === 'blitz') {
+          if (rejoin && blitzActivity.has(slot)) canceledInputs.add(slot);
+          else if (!rejoin) blitzActivity.delete(slot);
+        }
         aimInputs.delete(slot);
         sentInfo.delete(slot);
+        if (game === 'bedrock') canceledInputs.delete(slot);
+        bedrockHeartbeats.delete(slot);
         update();
       });
-      current.on('leave', ({slot}) => {
+      current.on('leave', ({slot, reason}) => {
+        if ((game === 'ringout' || game === 'hoops') && reason === 'kicked') playerIds.delete(slot);
+        ringoutHeartbeats.delete(slot);
+        ringoutNeutralizing.delete(slot);
+        hoopsPulses.delete(slot);
+        hoopsExpired.delete(slot);
+        hoopsNeutralizing.delete(slot);
+        trackCancellations.delete(slot);
+        trackPulses.delete(slot);
         aimInputs.delete(slot);
         sentInfo.delete(slot);
+        if (game === 'bedrock') canceledInputs.delete(slot);
+        bedrockHeartbeats.delete(slot);
         update();
       });
       current.on('message', ({slot, data}) => {
+        if (game === 'ringout' && data?.ringoutActive === true) ringoutHeartbeats.set(slot, performance.now());
+        if (game === 'ringout' && data?.cancel === true) {
+          inputResets.add(slot);
+          aimInputs.delete(slot);
+        }
+        if (game === 'ringout' && data?.leave === true) playerIds.delete(slot);
         if (data?.ready === true) sentInfo.delete(slot);
+        if (game === 'hoops') {
+          if (data?.hoopsPulse === true) hoopsPulses.set(slot, performance.now());
+          if (data?.hoopsCancel === true) hoopsResets.add(slot);
+        }
+        if (game === 'bedrock' && data?.bedrock && current.connected(slot)) {
+          if (data.bedrock.live === false) {
+            bedrockHeartbeats.set(slot, -Infinity);
+            canceledInputs.add(slot);
+          }
+          if (data.bedrock.live === true) {
+            if (bedrockHeartbeats.has(slot) && performance.now()-bedrockHeartbeats.get(slot)>1250) canceledInputs.add(slot);
+            bedrockHeartbeats.set(slot, performance.now());
+          }
+          const index = playerIds.get(slot);
+          if (index !== undefined) bedrockMessage?.(index, data.bedrock);
+        }
+        if (game === 'track') {
+          if (data?.trackCancel === true) trackCancellations.add(slot);
+          if (data?.trackPulse === true) trackPulses.set(slot, performance.now());
+        }
+        if (game === 'blitz') {
+          if (typeof data?.blitzActive === 'boolean') {
+            const previous = blitzActivity.get(slot);
+            if (!data.blitzActive || (previous && (!previous.active || performance.now() - previous.at > 1400))) {
+              canceledInputs.add(slot);
+            }
+            blitzActivity.set(slot, {active: data.blitzActive, at: performance.now()});
+          }
+          if (data?.blitzCancel === true) canceledInputs.add(slot);
+          if (data?.blitzLeave === true) playerIds.delete(slot);
+          if (data?.blitzPlay && room.connected(slot) && blitzActivity.get(slot)?.active) {
+            onBlitzCommand?.(playerIds.get(slot), data.blitzPlay);
+            sentInfo.delete(slot);
+          }
+        }
         const aim = data?.aim;
         if (game === 'ringout' && Array.isArray(aim) && aim.length === 2 && aim.every(Number.isFinite)) {
           aimInputs.set(slot, aim.map(axis => Math.max(-1, Math.min(1, axis))));

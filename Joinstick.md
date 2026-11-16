@@ -24,10 +24,10 @@ If the QR points at the wrong network interface, restart the relay with `npm sta
 ## Controller layouts
 
 - **Blitz 7** has an analog stick and buttons that change with your player's role and phase. Hold **Pass** to charge, then release to throw.
-- **Blitz Hoops** has an analog stick and dedicated **Shoot**, **Turbo**, **Swipe**, and **Pass / call** buttons. Hold **Shoot** to charge, then release.
-- **Blitz Track** has **Stride / join**, **Turbo**, **Dirty trick**, and **Event action** for jumps, baton passes, and aid cups.
-- **Bedrock Rivals** has an analog stick, a dedicated **Jet** button, and separate controls for minion and upgrade selection. Hold the picker button and aim to choose.
-- **Ringout** has independent movement and aiming sticks. Hold **Push** to charge it, aim with the right stick, then release.
+- **Blitz Hoops** shows the controls for your current job, including team selection, the CPU draft, **Shoot**, **Pass**, **Call for pass**, **Block**, and **Steal**. Hold **Shoot** while moving, then release to shoot. For free throws, watch the shared meter and tap **Free throw** in the green. Reconnecting during a match returns you to the same player. The CPU covers your spot while you’re away.
+- **Blitz Track** shows **Join** in the lobby and gives team captains **Choose athlete** at the event desk. During a race it shows **Stride**, **Turbo**, **Dirty trick**, and the current event action, such as **Pass baton** or **Hold Splash**. Field events label the main button for the current meter. Watch the shared screen for GO and the green zones. A CPU covers a disconnected runner until their phone rejoins.
+- **Bedrock Rivals** jets when you push the stick up. Hold **Dig** or **Fire** while steering. Tap **Pick minion** or **Pick upgrade** for a quick choice on the phone, then **Summon** or **Upgrade** to spend ore. In the lobby, the host can change the match size or start the round.
+- **Ringout** has independent movement and aiming sticks. Tap **Join** to claim a fighter, then **Ready** after customizing. Hold **Push** to charge it while moving and aiming, then release. Between rounds, browse with Move and tap **Pick** when your choice appears. The shared screen still shows every option.
 
 ## Internet invites
 

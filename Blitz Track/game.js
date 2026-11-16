@@ -10,6 +10,8 @@ const claims = new Map();
 const held = new Set();
 const touches = new Map();
 const previousPads = new Map();
+const padActions = [[0, 'j'], [1, 'k'], [3, 'i'], [2, 'l']];
+const gateActions = {jump: 'Jump', splash: 'Hold Splash', pass: 'Pass baton', cup: 'Grab cup'};
 const canvas = document.querySelector('canvas');
 const ctx = canvas.getContext('2d');
 const clamp = (value, minimum = 0, maximum = 1) => Math.max(minimum, Math.min(value, maximum));
@@ -146,9 +148,7 @@ function startMeet() {
 
 function openDesk() {
   const event = byId.get(program[round]);
-  const roster = available();
-  const claim = roster.find(player => player.id === claims.get(event.id));
-  const assigned = roster.length === 1 ? roster[0] : claim;
+  const assigned = lockedEntry();
   chosen = [null, null];
   if (assigned) chosen[assigned.team] = assigned.id;
   else {
@@ -171,27 +171,25 @@ function openDesk() {
   setStatus('Clerk of the course: athletes to your marks.');
 }
 
-function renderAssignments() {
+function lockedEntry() {
   const roster = available();
-  const event = byId.get(program[round]);
-  const locked = roster.length === 1 ? roster[0] : roster.find(player => player.id === claims.get(event.id));
-  if (locked) {
-    chosen = [null, null];
-    chosen[locked.team] = locked.id;
-  } else {
-    chosen = chosen.map(id => roster.some(player => player.id === id) ? id : null);
-  }
+  return roster.length === 1 ? roster[0] : roster.find(player => player.id === claims.get(program[round]));
+}
+
+function renderAssignments() {
+  const locked = lockedEntry();
   $('assignments').replaceChildren(...teams.map((team, index) => {
     const caption = element('label', team + ' ', index ? 'cool' : 'hot');
     const select = document.createElement('select');
-    selectPlayer(select, index, chosen[index]);
+    const entry = locked ? (locked.team === index ? locked.id : null) : chosen[index];
+    selectPlayer(select, index, available(index).some(player => player.id === entry) ? entry : null);
     select.disabled = Boolean(locked) || available(index).length === 0;
     select.onchange = () => assign(index, select.value);
     caption.append(select);
     return caption;
   }));
   $('desk-help').textContent = locked
-    ? `${locked.name} represents ${teams[locked.team]}${roster.length === 1 ? ' in solo play' : ' by event claim'}.`
+    ? `${locked.name} represents ${teams[locked.team]}${available().length === 1 ? ' in solo play' : ' by event claim'}.`
     : 'One human per event. A team captain can press Y to cycle their entry. Picking a human moves the other team to CPU.';
 }
 
@@ -204,8 +202,7 @@ function assign(team, id) {
 
 function beginHeat() {
   const event = byId.get(program[round]);
-  const roster = available();
-  const representative = roster.find(player => chosen.includes(player.id));
+  const representative = lockedEntry() ?? available().find(player => chosen.includes(player.id));
   heat = {
     event, t: -2.6, call: '', callUntil: -5, refOffset: Math.random() * .8,
     runners: teams.map((_, team) => {
@@ -311,7 +308,10 @@ function action(runner, key, down) {
     } else if (event.rhythm) {
       runner.cadence *= .82;
     }
-    if (t < .31 && runner.lastStride < -3 && !event.walk) runner.boost = event.launch ?? .68;
+    if (t < .31 && runner.lastStride < -3 && !event.walk) {
+      runner.boost = event.launch ?? .68;
+      announce('QUICK START!', .65);
+    }
     if (interval >= .105 || event.rhythm || event.walk) runner.lastStride = t;
   }
   if (down && key === 'k' && event.kick && runner.p >= .72 && runner.kick > .3) {
@@ -544,10 +544,71 @@ function pause() {
   setStatus(paused ? 'Paused' : `Dirty trick · ${heat.event.trick}. Watch the official!`);
 }
 
+function describePhones() {
+  const roster = available();
+  const descriptions = {};
+  const locked = screen === 'desk' ? lockedEntry() : null;
+  const entry = screen === 'desk' ? locked ?? roster.find(candidate => chosen.includes(candidate.id)) : null;
+  for (const player of roster) {
+    if (!window.couchJoinstick.label(Number(player.id))) continue;
+    const buttons = {};
+    const description = {player: player.name, team: teams[player.team], buttons, hint: ''};
+    descriptions[player.id] = description;
+    if (screen === 'setup') {
+      buttons[5] = 'Switch team';
+      if (!$('start').disabled) buttons[9] = 'Start meet';
+      description.hint = 'Pick events and claim entries on the shared screen.';
+    } else if (screen === 'desk') {
+      buttons[9] = 'Start event';
+      if (!locked && available(player.team)[0] === player) buttons[3] = 'Choose athlete';
+      description.hint = entry === player ? 'You’re up. Start the event and watch the stadium.'
+        : buttons[3] ? 'Cycle through your teammates or CPU. The shared screen shows the entry.'
+          : 'Watch the shared screen for the next event.';
+    } else if (screen === 'result') {
+      buttons[9] = round + 1 < program.length ? 'Next event' : 'Back to setup';
+      description.hint = 'The result is on the shared screen.';
+    } else {
+      const runner = heat.runners.find(candidate => candidate.id === player.id);
+      if (roster[0] === player) buttons[9] = paused ? 'Resume' : 'Pause';
+      if (paused) description.hint = 'Event paused.';
+      else if (!runner || runner.finish !== null) description.hint = 'Watch the rest of the event on the shared screen.';
+      else if (heat.event.stages) {
+        const timing = fieldTiming(heat.event, heat.t);
+        const stage = heat.event.stages[timing.stage];
+        buttons[0] = timing.mode === 'release' ? 'Hold / release' : timing.mode === 'mash' ? 'Build power' : 'Time it';
+        buttons[2] = 'Dirty trick';
+        description.hint = timing.mode === 'release' ? `${stage} · Hold, then release in green on the shared screen.`
+          : `${stage} · Follow the meter on the shared screen.`;
+      } else {
+        const gate = readGate(heat.event, runner);
+        buttons[0] = heat.event.walk ? 'Step' : 'Stride';
+        buttons[1] = 'Turbo';
+        buttons[2] = 'Dirty trick';
+        if (gate.point !== undefined) buttons[3] = gateActions[gate.kind];
+        description.hint = heat.t < 0 ? 'Eyes up. Tap on GO on the shared screen.'
+          : gate.kind === 'splash' && gate.point !== undefined ? 'Hold through the blue zone on the shared screen.'
+            : 'Watch the shared screen for timing and the official.';
+      }
+    }
+  }
+  return descriptions;
+}
+
 function managePads() {
   const pads = [...(navigator.getGamepads?.() ?? []), ...(window.couchJoinstick?.sample() ?? [])].filter(Boolean);
   const nextConnected = new Set(pads.map(pad => String(pad.index)));
   const changed = [...connected].some(id => !nextConnected.has(id)) || [...nextConnected].some(id => !connected.has(id));
+  if (screen === 'live') {
+    for (const runner of heat.runners) {
+      if (!runner.id || runner.id === 'keyboard') continue;
+      if (connected.has(runner.id) && !nextConnected.has(runner.id)) {
+        runner.charge = runner.loaded = 0;
+        announce(`${teams[runner.team]} · CPU TAKES OVER`, 1.5);
+      } else if (!connected.has(runner.id) && nextConnected.has(runner.id)) {
+        announce(`${teams[runner.team]} · PLAYER BACK IN`, 1.2);
+      }
+    }
+  }
   connected = nextConnected;
   for (const pad of pads) {
     const id = String(pad.index);
@@ -555,6 +616,11 @@ function managePads() {
     const down = new Set(pad.buttons.flatMap((value, index) => value.pressed ? [index] : []));
     const press = index => down.has(index) && !last.has(index);
     previousPads.set(id, down);
+    if (pad.inputCanceled) {
+      const runner = screen === 'live' && heat.runners.find(candidate => candidate.id === id);
+      if (runner) runner.charge = runner.loaded = 0;
+      continue;
+    }
     if (screen === 'setup' && !players.has(id) && press(0)) {
       const roster = available();
       const team = roster.filter(player => player.team === 0).length > roster.filter(player => player.team === 1).length ? 1 : 0;
@@ -581,7 +647,7 @@ function managePads() {
     }
     const runner = screen === 'live' && heat.runners.find(candidate => candidate.id === id);
     if (runner) {
-      for (const [index, key] of [[0, 'j'], [1, 'k'], [3, 'i'], [2, 'l']]) {
+      for (const [index, key] of padActions) {
         if (down.has(index) !== last.has(index)) action(runner, key, down.has(index));
       }
     }
@@ -892,4 +958,5 @@ function frame(now) {
 }
 
 renderSetup();
+window.couchJoinstick?.describe(describePhones);
 requestAnimationFrame(frame);

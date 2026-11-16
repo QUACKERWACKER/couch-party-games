@@ -116,13 +116,16 @@ function layout(which, tip = false) {
 }
 
 function assignPlayers() {
-  players.forEach(p => { p.human = null; });
+  players.forEach(p => { p.human = p.phoneSeat = null; });
   humans().forEach((human, index) => {
     human.number = index + 1;
     const slot = team(human.side).find(p => !p.human);
-    if (slot) slot.human = human;
+    if (slot) {
+      slot.human = human;
+      if (human.phone) slot.phoneSeat = human;
+    }
   });
-  $('roster').textContent = humans().map(p => `P${p.number} · ${names[p.side]}`).join('  /  ') || 'CPU exhibition';
+  $('roster').textContent = humans().map(p => `P${p.number} · ${names[p.side]}${p.phone ? p.online ? ' · PHONE' : ' · PHONE OFFLINE' : ''}`).join('  /  ') || 'CPU exhibition';
   $('team').textContent = names[keyboard.side] + ' ↔';
   $('team').disabled = !keyboard.enabled;
 }
@@ -140,6 +143,9 @@ function menuAction() {
   if (mode === 'pause') {
     resumePlay();
     return;
+  }
+  for (const [index, profile] of pads) {
+    if (profile.phone && !profile.online) pads.delete(index);
   }
   assignPlayers();
   for (const p of players) p.cpu = null;
@@ -164,7 +170,7 @@ function draftCaptain(which) {
 }
 
 function openDraftSlot(which) {
-  return team(which).find(p => !p.human && !p.cpu);
+  return team(which).find(p => !p.human && !p.phoneSeat && !p.cpu);
 }
 
 function nextDraftPick(preferred) {
@@ -176,6 +182,7 @@ function nextDraftPick(preferred) {
     mode = 'draft';
     overlay('CPU DRAFT', `P${draftCaptain(picking).number} picks for ${names[picking]}`, '');
     renderDraft();
+    $('title').focus({preventScroll: true});
     return;
   }
   for (const p of players) {
@@ -258,7 +265,8 @@ function beginMatch() {
   particles.length = 0;
   for (const p of players) {
     Object.assign(p, {fatigue: 0, injury: 0, injuryCooldown: 0});
-    p.statsLabel = p.human ? `P${p.human.number}` : p.cpu.name;
+    const human = p.human || p.phoneSeat;
+    p.statsLabel = human ? `P${human.number}` : p.cpu.name;
     p.stats = {points: 0, fieldGoals: 0, shots: 0, threes: 0, threeAttempts: 0,
       freeThrows: 0, freeThrowAttempts: 0, rebounds: 0, assists: 0, steals: 0, blocks: 0, fouls: 0};
   }
@@ -271,6 +279,7 @@ function beginMatch() {
 function resumePlay() {
   mode = 'live';
   $('overlay').hidden = true;
+  canvas.focus({preventScroll: true});
   $('pause').disabled = false;
   $('skip-show').hidden = sequence?.kind !== 'halftime';
 }
@@ -316,22 +325,46 @@ function readInputs() {
   }
   gamepads.push(...(window.couchJoinstick?.sample() || []));
   const seen = new Set();
+  const now = performance.now();
   for (const pad of gamepads) {
     if (!pad?.connected || pad.mapping !== 'standard') continue;
     seen.add(pad.index);
     let profile = pads.get(pad.index);
     const buttons = [0, 1, 2, 3, 5, 9].map(i => !!pad.buttons[i]?.pressed);
     const pressed = i => !!pad.buttons[i]?.pressed;
+    if (profile?.phone && !profile.online) {
+      profile.online = true;
+      profile.last = buttons;
+      if (mode === 'lobby' || mode === 'end') assignPlayers();
+      else {
+        const player = players.find(p => p.phoneSeat === profile);
+        if (player) {
+          player.human = profile;
+          player.charge = 0;
+          player.cpu = null;
+        }
+        if (mode === 'draft') nextDraftPick(draft.side);
+      }
+    }
     if (!profile && buttons[0] && (mode === 'lobby' || mode === 'end')) {
       const red = humans().filter(p => !p.side).length;
       const blue = humans().length - red;
       if (red + blue < 6) {
-        profile = {side: red <= blue ? 0 : 1, last: buttons};
+        profile = {side: red <= blue ? 0 : 1, last: buttons, phone: pad.source === 'joinstick', online: true};
         pads.set(pad.index, profile);
         assignPlayers();
       }
     }
     if (!profile) continue;
+    if (pad.resetInputs) {
+      const player = players.find(p => p.human === profile);
+      if (player) {
+        player.charge = player.request = 0;
+        player.vx = player.vy = 0;
+      }
+      profile.last = buttons;
+      continue;
+    }
     const state = input(
       (pressed(15) ? 1 : pressed(14) ? -1 : pad.axes[0]) || 0,
       (pressed(13) ? 1 : pressed(12) ? -1 : pad.axes[1]) || 0,
@@ -360,15 +393,49 @@ function readInputs() {
   }
   for (const [index, profile] of pads) {
     if (seen.has(index)) continue;
-    pads.delete(index);
+    const activeMatch = mode !== 'lobby' && mode !== 'end';
+    const reserved = profile.phone && window.couchJoinstick?.reserved?.(index) !== false;
+    const retain = reserved && (activeMatch || profile.online || now - profile.lostAt < 60_000);
+    if (retain && !profile.online) continue;
+    if (retain) {
+      profile.online = false;
+      profile.lostAt = now;
+      profile.last = [];
+    } else pads.delete(index);
     if (mode === 'live' || mode === 'pause' || mode === 'draft') {
-      const player = players.find(p => p.human === profile);
+      const player = players.find(p => p.human === profile || p.phoneSeat === profile);
       if (player) {
         player.human = null;
+        if (!retain) player.phoneSeat = null;
+        player.charge = player.request = 0;
+        player.vx = player.vy = 0;
         if (mode === 'draft') nextDraftPick(draft.side);
       }
     } else assignPlayers();
   }
+}
+
+function describePhoneControls() {
+  const inLobby = mode === 'lobby' || mode === 'end';
+  const labels = {_default: {mode: inLobby ? humans().length < 6 ? 'join' : 'full' : 'wait'}};
+  for (const [index, profile] of pads) {
+    if (!profile.phone) continue;
+    const player = players.find(p => p.human === profile);
+    let phase = 'stoppage';
+    if (inLobby) phase = 'lobby';
+    else if (mode === 'draft') phase = profile === draftCaptain(draft.side) ? 'draft' : 'draftWait';
+    else if (mode === 'pause') phase = 'paused';
+    else if (sequence?.kind === 'halftime') phase = 'halftime';
+    else if (sequence?.kind === 'free-throw') {
+      phase = sequence.shooter === player && sequence.result === null ? 'freeThrow' : 'freeThrowWait';
+    } else if (!sequence && !inbound) {
+      if (owner === player && player) phase = 'ball';
+      else if (!owner && flight?.type !== 'pass') phase = 'loose';
+      else phase = player?.side === side ? 'offense' : 'defense';
+    }
+    labels[index] = {player: `P${profile.number}`, team: names[profile.side], mode: phase};
+  }
+  return labels;
 }
 
 function input(x, y, down, previous) {
@@ -747,7 +814,7 @@ function update(dt) {
     return;
   }
   if (inbound > 0) {
-    inbound -= dt;
+    inbound = Math.max(0, inbound - dt);
     return;
   }
 
@@ -1425,6 +1492,7 @@ window.addEventListener('blur', () => {
   if (mode === 'live') togglePause();
 });
 
+window.couchJoinstick?.describe(describePhoneControls);
 paintCourt();
 assignPlayers();
 layout(0);
