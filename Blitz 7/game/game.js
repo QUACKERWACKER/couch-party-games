@@ -452,21 +452,24 @@ function setFormation() {
   updateScore();
 }
 
+function offensivePositions(index) {
+  const x=[-31,-26,-7,-7,-7,0,0], y=[0,40,-26,26,0,-122,122];
+  const call=plays[index];
+  if (call && runningPlay(call)) {
+    y[1]=call.kind==='sweep' ? call.side*40 : 17;
+    if (call.kind==='handoff') x[1]=-48;
+  }
+  if (!call) x[0]=-65;
+  return x.map((offset,i)=>({x:clamp(line+direction()*offset,15,945),y:MID+y[i]}));
+}
+
 function positionFormation() {
   const formation=formations[defenseIndex];
-  const d = direction();
-  const offensiveX = [-31,-26,-7,-7,-7,0,0];
-  const offensiveY = [0,40,-26,26,0,-122,122];
-  const call=plays[playIndex];
-  if (call && runningPlay(call)) {
-    offensiveY[1]=call.kind==='sweep' ? call.side*40 : 17;
-    if (call.kind==='handoff') offensiveX[1]=-48;
-  }
-  if (puntSelected()) offensiveX[0]=-65;
+  const d=direction(), starts=offensivePositions(playIndex);
   for (const p of players) {
     const onOffense = p.team===team, i=role(p);
-    p.x=clamp(line+d*(onOffense ? offensiveX[i] : formation.x[i]),15,945);
-    p.y=MID+(onOffense ? offensiveY[i] : formation.y[i]);
+    p.x=onOffense ? starts[i].x : clamp(line+d*formation.x[i],15,945);
+    p.y=onOffense ? starts[i].y : MID+formation.y[i];
     p.fx=onOffense ? d : -d;
     p.fy=0;
   }
@@ -1842,29 +1845,32 @@ function drawRoute(points,color,dash=[]) {
   ctx.restore();
 }
 
-function drawPlayRoutes() {
-  const d=direction(), passer=qb(), back=offense()[1];
-  if (puntSelected()) {
-    drawRoute([passer,{x:clamp(line+d*310,21,939),y:MID}], '#ffd673',[7,5]);
-    return;
-  }
-  const call=plays[playIndex];
-  const run=runningPlay(call);
-  for (const p of offense().slice(1)) {
-    const slot=role(p);
+function playRoutes(index,starts) {
+  const d=direction(), [passer,back]=starts;
+  const call=plays[index];
+  if (!call) return [{points:[passer,{x:clamp(line+d*310,21,939),y:MID}],type:'kick'}];
+  const routes=[], run=runningPlay(call), roster=offense();
+  for (let slot=1;slot<roster.length;slot++) {
     if (run && slot===1) continue;
-    if (p.owner===null && (slot===2 || slot===4) && !run && call.kind!=='keeper') {
-      drawRoute([p,{x:clamp(line+d*18,20,940),y:p.y}], '#c4d3b699',[3,4]);
-    } else {
-      drawRoute([p,routeTarget(call,slot,.37),routeTarget(call,slot,1.16)], colors[team]+'ca');
-    }
+    const start=starts[slot];
+    if (roster[slot].owner===null && (slot===2 || slot===4) && !run && call.kind!=='keeper') {
+      routes.push({points:[start,{x:clamp(line+d*18,20,940),y:start.y}],type:'block'});
+    } else routes.push({points:[start,routeTarget(call,slot,.37),routeTarget(call,slot,1.16)],type:'route'});
   }
   if (run) {
     const exchange={x:passer.x-d*12,y:passer.y+call.side*22};
-    drawRoute([passer,exchange], '#fff0b0',[3,3]);
-    drawRoute([back,exchange,runTarget(call)], '#ffda6f');
+    routes.push({points:[passer,exchange],type:'exchange'},{points:[back,exchange,runTarget(call)],type:'run'});
   } else if (call.kind==='keeper') {
-    drawRoute([passer,{x:clamp(line+d*95,20,940),y:MID}], '#ffda6f');
+    routes.push({points:[passer,{x:clamp(line+d*95,20,940),y:MID}],type:'run'});
+  }
+  return routes;
+}
+
+function drawPlayRoutes() {
+  const colorsByType={kick:'#ffd673',block:'#c4d3b699',route:colors[team]+'ca',exchange:'#fff0b0',run:'#ffda6f'};
+  const dashByType={kick:[7,5],block:[3,4],exchange:[3,3]};
+  for (const {points,type} of playRoutes(playIndex,offense())) {
+    drawRoute(points,colorsByType[type],dashByType[type]);
   }
 }
 
@@ -2358,17 +2364,47 @@ function draw() {
 }
 
 function choosePhonePlay(owner,choice) {
-  if (state!=='playing' || phase!=='ready' || owner==null || owner!==qb().owner) return;
-  const count=plays.length+Number(down===4);
-  if (choice.id!==playbookId || !Number.isInteger(choice.index) || choice.index<0 || choice.index>=count) return;
-  playIndex=choice.index;
+  if (state!=='playing' || phase!=='ready' || owner==null || choice.id!==playbookId ||
+    !Number.isInteger(choice.index) || choice.index<0) return;
+  if (choice.kind==='defense') {
+    if (owner!==defenseCaptain().owner || choice.index>=formations.length) return;
+    defenseIndex=choice.index;
+  } else {
+    if (owner!==qb().owner || choice.index>=plays.length+Number(down===4)) return;
+    playIndex=choice.index;
+  }
   positionFormation();
   sound(590,.06);
+}
+
+const phoneBookCache={};
+function phonePlaybook(kind) {
+  const stamp=playbookId+':'+team+':'+down+':'+offense().map(p=>Number(p.owner===null)).join('');
+  const selected=kind==='defense' ? defenseIndex : playIndex;
+  if (phoneBookCache[kind]?.stamp!==stamp) phoneBookCache[kind]={stamp,book:buildPhonePlaybook(kind)};
+  return {...phoneBookCache[kind].book,selected};
+}
+
+function buildPhonePlaybook(kind) {
+  if (kind==='defense') return {
+    id:playbookId,kind,selected:defenseIndex,
+    options:formations.map(formation=>({
+      name:formation.name,rushers:formation.rushers,players:formation.x.map((x,i)=>[x,formation.y[i]])
+    }))
+  };
+  const options=[...plays.map(play=>play.name),...(down===4 ? ['PUNT'] : [])];
+  const point=({x,y})=>[Math.round((x-line)*direction()),Math.round(y-MID)];
+  return {id:playbookId,kind,selected:playIndex,options:options.map((name,index)=>{
+    const starts=offensivePositions(index);
+    return {name,players:starts.map(point),routes:playRoutes(index,starts)
+      .map(({type,points})=>[type,points.map(point)])};
+  })};
 }
 
 function describePhones() {
   const labels={_open:14-controllers.size-Number(keyboard)};
   const currentHost=host();
+  let offenseBook, defenseBook;
   for (const p of players) {
     if (typeof p.owner!=='number' || p.owner<1000) continue;
     const captain=p===qb();
@@ -2386,8 +2422,8 @@ function describePhones() {
     else if (p===carrier && canPass(p)) mode='offense';
     else if (p===carrier) mode='runner';
     else mode='receiver';
-    const playbook=mode==='ready' ? {id:playbookId, selected:playIndex,
-      options:[...plays.map(play=>play.name),...(down===4 ? ['PUNT'] : [])]} : undefined;
+    const playbook=mode==='ready' ? (offenseBook ??= phonePlaybook('offense')) :
+      mode==='defenseReady' ? (defenseBook ??= phonePlaybook('defense')) : undefined;
     labels[p.owner]={player:p.label,team:names[p.team],host:p.owner===currentHost,mode,playbook};
   }
   return labels;

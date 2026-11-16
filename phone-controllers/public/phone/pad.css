@@ -127,7 +127,7 @@ button {
   padding: 6px 10px;
   cursor: pointer;
 }
-body[data-game] main :is(.action, .stick) { touch-action: none; }
+body[data-game] main :is(.action, .stick, [data-call-action]) { touch-action: none; }
 .action > span { pointer-events: none; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 #controls {
@@ -257,15 +257,30 @@ body[data-game="track"] { --base: #21192b; --panel: #3c2c48; --edge: #786080; --
 .bedrock-picker b, .bedrock-picker button:last-child { grid-column: 1 / -1; }
 .bedrock-picker button { font-size: .78rem; overflow-wrap: anywhere; }
 .bedrock-picker button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
-#blitz-playbook { position: relative; flex: 0 0 auto; padding: 0 10px; border: 1px solid var(--edge); border-radius: 9px; background: var(--panel); }
-#blitz-playbook summary { min-height: 44px; align-content: center; cursor: pointer; color: var(--accent); }
-#blitz-playbook select {
-  position: absolute;
-  z-index: 2;
-  inset: auto auto calc(100% + 6px) 0;
-  min-width: 100%;
-  min-height: 44px;
-  font: inherit;
+[data-game="blitz"] main:has(#blitz-playbook:not([hidden])) #controls { visibility: hidden; }
+#blitz-playbook {
+  grid-area: 2 / 1;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  max-height: var(--play-height);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 8px;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  background: var(--panel);
+}
+#blitz-call-title { margin: 0; font-size: 1rem; color: var(--accent); }
+.blitz-preview canvas { display: block; width: 100%; height: auto; border-radius: 6px; }
+.blitz-call-detail { color: var(--muted); font-size: .74rem; margin-top: 3px; }
+.blitz-choices, .blitz-call-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 5px; }
+.blitz-choices button { min-height: 44px; font-size: .76rem; text-wrap: balance; }
+.blitz-choices button[aria-pressed="true"], [data-call-action="0"] { background: var(--accent); color: var(--base); border-color: var(--accent); }
+@media (orientation: landscape) {
+  #blitz-playbook { grid-template-columns: minmax(0,1.1fr) minmax(0,1fr); }
+  #blitz-call-title, .blitz-call-actions { grid-column: 1 / -1; }
+  .blitz-choices { align-content: start; }
 }
 
 body[data-game="hoops"] #controls.hoops-recovery { grid-template-columns: minmax(0, 1fr); }

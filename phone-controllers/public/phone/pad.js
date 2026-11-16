@@ -78,7 +78,7 @@ let menuSelection = 'blitz';
 let pad;
 let movementFrame = 0;
 let lastAim = [0, 0];
-let blitzBook, blitzMenu, blitzSelect;
+let blitzBook, blitzMenu, blitzChoices, blitzPreview;
 let bedrockState, bedrockPicker, bedrockHeartbeat;
 let hoopsPulseTimer = 0;
 let trackPulseTimer = 0;
@@ -372,7 +372,7 @@ function roomStatus(status) {
   $('leave').hidden = status === 'closed';
   document.querySelector('.join-recovery').hidden = status !== 'closed';
   $('status').textContent = connected ? 'Connected' : status === 'closed' ? 'Disconnected' : 'Reconnecting…';
-  if (!connected && blitzMenu) {blitzMenu.hidden = true; blitzMenu.open = false;}
+  if (!connected && blitzMenu) {blitzMenu.hidden = true; }
   clearInterval(bedrockHeartbeat);
   clearInterval(trackPulseTimer);
   if (connected) {
@@ -436,20 +436,115 @@ function blitzAction(number, label) {
 }
 
 function installBlitzMenu() {
-  blitzMenu = document.createElement('details');
+  blitzMenu = document.createElement('section');
   blitzMenu.id = 'blitz-playbook';
   blitzMenu.hidden = true;
-  const title = document.createElement('summary');
-  title.textContent = 'Choose a play';
-  blitzSelect = document.createElement('select');
-  blitzSelect.setAttribute('aria-label', 'Offensive play');
-  blitzSelect.addEventListener('change', () => {
-    if (!blitzBook || pad?.status !== 'connected') return;
-    pad.send({blitzPlay: {id: blitzBook.id, index: Number(blitzSelect.value)}});
-    blitzMenu.open = false;
+  blitzMenu.setAttribute('aria-labelledby', 'blitz-call-title');
+  const heading = document.createElement('h2');
+  heading.id = 'blitz-call-title';
+  const preview = document.createElement('div');
+  preview.className = 'blitz-preview';
+  blitzPreview = document.createElement('canvas');
+  blitzPreview.width = 480;
+  blitzPreview.height = 154;
+  blitzPreview.setAttribute('role', 'img');
+  const detail = document.createElement('p');
+  detail.className = 'blitz-call-detail';
+  preview.append(blitzPreview, detail);
+  blitzChoices = document.createElement('div');
+  blitzChoices.className = 'blitz-choices';
+  const quick = document.createElement('div');
+  quick.className = 'blitz-call-actions';
+  for (const [number,label] of [[0,'Snap'],[3,'Kick']]) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.callAction = number;
+    button.textContent = label;
+    button.addEventListener('click', () => {
+      const action = actions.get(number);
+      if (!blitzBook || blitzBook.kind !== 'offense' || pad?.status !== 'connected' || action.held) return;
+      setAction(action, true);
+      action.clickTimer = setTimeout(() => setAction(action, false), 90);
+    });
+    quick.append(button);
+  }
+  blitzMenu.append(heading, preview, blitzChoices, quick);
+  $('controls').after(blitzMenu);
+}
+
+function drawBlitzPreview(option, defense) {
+  const canvas = blitzPreview, ctx = canvas.getContext('2d');
+  const routes = option.routes || [];
+  const all = option.players.concat(routes.flatMap(([, points]) => points));
+  const minX = Math.min(-70, ...all.map(([x]) => x)) - 14;
+  const maxX = Math.max(150, ...all.map(([x]) => x)) + 19;
+  const plot = ([x,y]) => [(x - minX) / (maxX - minX) * 448 + 16, 77 + y * .44];
+  ctx.fillStyle = '#183b31';
+  ctx.fillRect(0, 0, 480, 154);
+  function line(points, color, dashed = false, arrow = false) {
+    const coords = points.map(plot);
+    const [x, y] = coords.at(-1), previous = coords.at(-2);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = arrow ? 2.5 : 1;
+    ctx.setLineDash(dashed ? [5, 4] : []);
+    ctx.beginPath();
+    coords.forEach(([px, py], i) => i ? ctx.lineTo(px, py) : ctx.moveTo(px, py));
+    ctx.stroke();
+    if (!arrow || Math.hypot(x - previous[0], y - previous[1]) < 4) return;
+    const angle = Math.atan2(y - previous[1], x - previous[0]);
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(x - 8 * Math.cos(angle - .52), y - 8 * Math.sin(angle - .52));
+    ctx.lineTo(x, y);
+    ctx.lineTo(x - 8 * Math.cos(angle + .52), y - 8 * Math.sin(angle + .52));
+    ctx.stroke();
+  }
+  for (let x = -40; x < maxX; x += 40) {
+    line([[x,-151],[x,151]], x === 0 ? '#b1d2bf' : '#54816b', x === 0);
+  }
+  for (const [type,points] of routes) {
+    line(points, ['kick','run','exchange'].includes(type) ? '#ffcf74' : '#a9e9cf', type==='block' || type==='exchange', true);
+  }
+  option.players.forEach((point,index) => {
+    if (defense && index < option.rushers) line([point,[point[0]-25,point[1]]], '#ffcf74', false, true);
+    const [x,y] = plot(point);
+    ctx.fillStyle = (defense ? index < option.rushers : index === 0) ? '#ffcf74' : '#a9e9cf';
+    ctx.beginPath();
+    ctx.arc(x,y,index===0 ? 6 : 4.5,0,Math.PI*2);
+    ctx.fill();
   });
-  blitzMenu.append(title, blitzSelect);
-  $('hint').before(blitzMenu);
+  canvas.setAttribute('aria-label', option.name + (defense ? ' with '+option.rushers+' rushers' : ' route preview'));
+}
+
+function renderBlitzBook(book) {
+  if (!book) {
+    blitzBook = null;
+    blitzMenu.hidden = true;
+    return;
+  }
+  const defense = book.kind === 'defense';
+  if (blitzBook?.id !== book.id || blitzBook?.kind !== book.kind || blitzBook?.options.length !== book.options.length) {
+    blitzChoices.replaceChildren(...book.options.map((option,index) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = option.name;
+      button.addEventListener('click', () => {
+        if (pad?.status !== 'connected' || !blitzBook) return;
+        pad.send({blitzPlay: {id:blitzBook.id, kind:blitzBook.kind, index}});
+      });
+      return button;
+    }));
+  }
+  blitzBook = book;
+  const selected = book.options[book.selected];
+  blitzMenu.hidden = false;
+  $('blitz-call-title').textContent = defense ? 'Defensive lineup' : 'QB play call';
+  blitzMenu.querySelector('.blitz-call-detail').textContent = defense ?
+    selected.rushers+' rush · '+(7-selected.rushers)+' in coverage' : 'Routes run left to right';
+  blitzMenu.querySelector('.blitz-call-actions').hidden = defense;
+  blitzMenu.querySelector('[data-call-action="0"]').textContent = selected.name === 'PUNT' ? 'Punt' : 'Snap';
+  [...blitzChoices.children].forEach((button,index) => button.setAttribute('aria-pressed', String(book.selected===index)));
+  drawBlitzPreview(selected, defense);
 }
 
 function updateBlitz(info) {
@@ -461,28 +556,17 @@ function updateBlitz(info) {
     $('player').textContent = 'Phone ' + pad.slot;
     $('status').textContent = 'Connected';
     $('hint').textContent = game.hint;
-    blitzBook = null;
-    blitzMenu.open = false;
-    blitzMenu.hidden = true;
+    renderBlitzBook(null);
     return;
   }
   const [a, b, x, y, hint] = labels;
-  const book = mode === 'ready' ? info.playbook : null;
-  const selected = book?.options[book.selected];
+  const book = (mode === 'ready' || mode === 'defenseReady') && info.playbook?.kind ? info.playbook : null;
+  const selected = book?.options[book.selected]?.name;
   [selected === 'PUNT' ? 'Punt' : a, b, x, y].forEach((label, index) => blitzAction(index, label));
   blitzAction(5, mode === 'lobby' ? (info.host ? 'Team / CPU' : 'Switch team') : null);
   blitzAction(9, info.host ? ({lobby: 'Start', paused: 'Resume', final: 'Back to lobby'}[mode] || 'Pause') : null);
   emphasizeAction(mode === 'runner' ? 1 : 0);
-  if (!book || blitzBook?.id !== book.id) {
-    blitzMenu.open = false;
-    blitzSelect.replaceChildren(...(book?.options || []).map((name, index) => new Option(name, index)));
-  }
-  blitzBook = book;
-  blitzMenu.hidden = !book;
-  if (book) {
-    blitzSelect.value = book.selected;
-    blitzMenu.querySelector('summary').textContent = 'Play · ' + selected;
-  }
+  renderBlitzBook(book);
   $('player').textContent = info.player + (info.host ? ' ★' : '');
   $('status').textContent = info.team || 'Connected';
   $('hint').textContent = mode === 'lobby' && !info.host ? 'Switch teams or customize your boots and helmet.' : hint;
