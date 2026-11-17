@@ -49,6 +49,7 @@ def build(output, relay):
 
     source = ROOT / "phone-controllers/public/phone"
     copyfile(source / "profiles.js", output / "profiles.js")
+    copyfile(source / "direct-link.js", output / "direct-link.js")
     script = ""
     if relay:
         script = (f"const couchJoinstickServer = {json.dumps(relay)};\n"
@@ -61,6 +62,7 @@ def build(output, relay):
         (phone / "index.html").write_text(html)
         copyfile(source / "pad.css", phone / "pad.css")
         copyfile(source / "profiles.js", phone / "profiles.js")
+        copyfile(source / "direct-link.js", phone / "direct-link.js")
         (phone / "pad.js").write_text(f"const couchPhoneRelay = {json.dumps(relay)};\n"
                                       + (source / "pad.js").read_text())
     (output / "joinstick-host.js").write_text(script)

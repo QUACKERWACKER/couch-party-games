@@ -247,22 +247,43 @@ function setupLauncher(hostedPhone) {
   const gameKeys = links.map(link => link.dataset.game);
   const ready = new Set();
   const players = new Map();
+  const directLinks = new Map();
+  const relayPings = new Map();
+  const pingLabels = new Map();
   const roster = document.querySelector('#players-list');
   const playersCount = document.querySelector('#players-count');
   const manualJoin = document.querySelector('#enter-phone-code');
   const {avatar, colors, defaults, normalize} = window.couchProfiles;
   let menuSelection = gameKeys[0];
 
+  function updatePing(slot) {
+    const label = pingLabels.get(slot);
+    if (!label) return;
+    const link = directLinks.get(slot);
+    const ping = link?.input ? link.ping : relayPings.get(slot);
+    const text = ping === undefined ? 'Ping —' : ping < 1 ? '<1 ms' : Math.round(ping) + ' ms';
+    if (label.textContent !== text) label.textContent = text;
+  }
+
+  function validPing(ms) {
+    return Number.isFinite(ms) && ms >= 0 && ms < 10000;
+  }
+
   function updateRoster() {
     const entries = [...players].filter(([slot]) => room?.connected(slot)).sort(([a], [b]) => a - b);
+    pingLabels.clear();
     roster.replaceChildren(...entries.map(([slot, profile]) => {
       const item = document.createElement('li');
       const text = document.createElement('div');
       const name = document.createElement('strong');
       const phone = document.createElement('small');
       name.textContent = profile?.name || 'Phone ' + slot;
-      phone.textContent = profile?.name ? 'Phone ' + slot : 'Connected';
-      text.append(name, phone);
+      phone.textContent = directLinks.get(slot)?.input ? 'Direct connection' : profile?.name ? 'Phone ' + slot : 'Connected';
+      const ping = document.createElement('small');
+      ping.title = 'Round-trip ping between this phone and the host';
+      pingLabels.set(slot, ping);
+      updatePing(slot);
+      text.append(name, phone, ping);
       item.append(avatar(profile?.avatar ?? defaults.avatar, profile?.color ?? defaults.color), text);
       return item;
     }));
@@ -285,12 +306,93 @@ function setupLauncher(hostedPhone) {
     }
   };
 
+  function closeDirect(slot) {
+    const link = directLinks.get(slot);
+    if (!link) return;
+    directLinks.delete(slot);
+    clearTimeout(link.timer);
+    link.peer?.close();
+    if (link.input) updateRoster();
+  }
+
+  function sampleInput(slot) {
+    const link = directLinks.get(slot);
+    if (!link?.input) return room.input(slot);
+    const input = {...link.input, pressed: link.pressed};
+    link.pressed = {};
+    return input;
+  }
+
+  async function answerDirect(slot, offer) {
+    if (directLinks.has(slot) || typeof offer?.id !== 'string' ||
+        !/^\d{1,10}-\d{1,10}$/.test(offer.id) || typeof offer.sdp !== 'string' || offer.sdp.length > 5500) return;
+    const current = room;
+    const link = {pressed: {}};
+    directLinks.set(slot, link);
+    const isCurrent = () => current === room && directLinks.get(slot) === link;
+    const close = () => { if (isCurrent()) closeDirect(slot); };
+    link.timer = setTimeout(close, 6000);
+    try {
+      const {localPeer, localDescription} = await import(new URL('direct-link.js', home));
+      if (!isCurrent()) return;
+      const peer = link.peer = localPeer();
+      if (!peer) return close();
+      peer.onconnectionstatechange = () => {
+        if (['failed', 'disconnected', 'closed'].includes(peer.connectionState)) close();
+      };
+      peer.ondatachannel = ({channel}) => {
+        if (!isCurrent() || channel.label !== 'couch-input') return channel.close();
+        channel.onopen = () => clearTimeout(link.timer);
+        channel.onclose = close;
+        channel.onmessage = ({data}) => {
+          if (!isCurrent() || !ready.has(slot) || typeof data !== 'string' || data.length > 80) return;
+          if (data === 'ping' || data.startsWith('ping:')) {
+            const ms = Number(data.slice(5));
+            if (data.length > 5 && validPing(ms)) {
+              link.ping = ms;
+              updatePing(slot);
+            }
+            if (channel.readyState === 'open') {
+              try { channel.send('pong'); } catch { close(); }
+            }
+            return;
+          }
+          let packet;
+          try { packet = JSON.parse(data); } catch { return; }
+          if (!Array.isArray(packet) || packet.length !== 5) return;
+          const [x,y,mask,aimX,aimY] = packet;
+          if (!Number.isInteger(mask) || mask < 0 || mask > 1023 ||
+              ![x,y,aimX,aimY].every(v => Number.isFinite(v) && Math.abs(v) <= 1)) return;
+          const buttons = {};
+          for (const number of [0,1,2,3,5,7,9]) {
+            if (!(mask & (1 << number))) continue;
+            const key = 'b' + number;
+            buttons[key] = true;
+            if (!link.input?.buttons[key]) link.pressed[key] = true;
+          }
+          const first = !link.input;
+          link.input = {x,y,buttons};
+          if (first) {
+            current.input(slot);
+            updateRoster();
+          }
+          if (game === 'ringout') listeners?.message?.({slot,data:{aim:[aimX,aimY]}});
+        };
+      };
+      await peer.setRemoteDescription({type: 'offer', sdp: offer.sdp});
+      const sdp = await localDescription(peer, await peer.createAnswer());
+      if (isCurrent() && sdp?.length < 5500) current.send(slot, {directAnswer: {id: offer.id, sdp}});
+      else close();
+    } catch { close(); }
+  }
+
   function showGame(next, gameLink) {
     frame?.remove();
     frame = undefined;
     listeners = undefined;
     game = next;
     ready.clear();
+    for (const slot of directLinks.keys()) closeDirect(slot);
     main.hidden = Boolean(next);
     if (next) {
       selected = gameLink;
@@ -316,7 +418,7 @@ function setupLauncher(hostedPhone) {
     menuPads() {
       if (game || room?.status !== 'connected') return [];
       return [...ready].filter(slot => room.connected(slot)).map(slot => {
-        const {x, y, buttons, pressed} = room.input(slot);
+        const {x, y, buttons, pressed} = sampleInput(slot);
         return {index: slot, x, y, confirm: Boolean(buttons.b0 || pressed.b0)};
       });
     },
@@ -335,7 +437,7 @@ function setupLauncher(hostedPhone) {
         get slots() { return current.slots; },
         get status() { return current.status; },
         connected: slot => ready.has(slot) && current.connected(slot),
-        input: slot => current.input(slot),
+        input: sampleInput,
         profile: slot => players.get(slot),
         send: (slot, data) => current.send(slot, data),
         kick: slot => current.kick(slot),
@@ -368,7 +470,9 @@ function setupLauncher(hostedPhone) {
     room = undefined;
     current?.close();
     ready.clear();
+    for (const slot of directLinks.keys()) closeDirect(slot);
     players.clear();
+    relayPings.clear();
     updateRoster();
     if (frame) history.back();
     invite.hidden = stop.hidden = copy.hidden = true;
@@ -425,6 +529,8 @@ function setupLauncher(hostedPhone) {
       room = current;
       current.on('join', ({slot, rejoin}) => {
         ready.delete(slot);
+        closeDirect(slot);
+        relayPings.delete(slot);
         if (!rejoin || !players.has(slot)) players.set(slot, null);
         updateRoster();
         current.send(slot, {couchGame: game ?? null});
@@ -433,6 +539,8 @@ function setupLauncher(hostedPhone) {
       });
       current.on('leave', event => {
         ready.delete(event.slot);
+        closeDirect(event.slot);
+        relayPings.delete(event.slot);
         if (event.reason === 'kicked') players.delete(event.slot);
         updateRoster();
         listeners?.leave?.(event);
@@ -450,6 +558,16 @@ function setupLauncher(hostedPhone) {
           if (!game) current.send(slot, {couchSelection: menuSelection});
         }
         if (!ready.has(slot)) return;
+        if (data?.directOffer) return answerDirect(slot, data.directOffer);
+        if (validPing(data?.relayPing)) {
+          relayPings.set(slot, data.relayPing);
+          updatePing(slot);
+          return;
+        }
+        if (typeof data?.inputPing === 'number') {
+          current.send(slot, {inputPong: data.inputPing});
+          return;
+        }
         if (!game && data?.couchProfile && typeof data.couchProfile === 'object') {
           const profile = normalize(data.couchProfile);
           profile.accent = colors[profile.color][1];

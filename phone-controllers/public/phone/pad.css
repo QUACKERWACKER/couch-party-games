@@ -309,6 +309,8 @@ body[data-game="hoops"] .hoops-recovery #face-buttons [data-action="0"] { grid-a
 body[data-game="hoops"] .hoops-recovery #face-buttons [data-action="1"] { grid-area: 1 / 2; }
 body[data-game="hoops"] .hoops-recovery #face-buttons [data-action="3"] { grid-area: 1 / 3; }
 
+body[data-game="lobby"] header { grid-template-columns: minmax(0, 1fr) auto; }
+body[data-game="lobby"] #system-buttons { display: none; }
 body[data-game="lobby"] .utilities { flex-wrap: wrap; justify-content: flex-end; }
 #profile-dialog {
   width: min(34rem, calc(100% - 24px));

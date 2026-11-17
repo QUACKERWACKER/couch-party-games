@@ -1,4 +1,5 @@
 import './profiles.js';
+import {localPeer, localDescription} from './direct-link.js';
 
 const relay = typeof couchPhoneRelay === 'undefined' ? location.origin : couchPhoneRelay;
 const games = {
@@ -75,49 +76,92 @@ const sticks = {};
 const portrait = matchMedia('(orientation: portrait)');
 let profile;
 let menuSelection = 'blitz';
-let pad;
-let movementFrame = 0;
+let pad, direct, relayTimer;
+let lastRelayMotion = -Infinity;
+let nextDirectAttempt = 0;
+let relayInterval = 1000 / 60;
 let lastAim = [0, 0];
 let blitzBook, blitzMenu, blitzChoices, blitzPreview;
 let bedrockState, bedrockPicker, bedrockHeartbeat;
 let hoopsPulseTimer = 0;
 let trackPulseTimer = 0;
 
-function publish(force = false) {
-  cancelAnimationFrame(movementFrame);
-  movementFrame = 0;
+function send(message) {
+  if (pad?.status === 'connected') pad.send(message);
+}
+
+function publish(force = false, motion = false) {
   if (!pad || (!force && pad.status !== 'connected')) return;
-  if (pad.status === 'connected' && sticks.aim && (lastAim[0] !== sticks.aim.x || lastAim[1] !== sticks.aim.y)) {
-    lastAim = [sticks.aim.x, sticks.aim.y];
+  const x = sticks.move?.x ?? 0;
+  const y = sticks.move?.y ?? 0;
+  const aimX = sticks.aim?.x ?? 0;
+  const aimY = sticks.aim?.y ?? 0;
+  let mask = 0;
+  for (const [number, action] of actions) if (action.held) mask |= 1 << number;
+  const now = performance.now();
+  const channel = direct?.channel;
+  if (!direct?.active && channel?.readyState === 'open' && !mask && !x && !y && !aimX && !aimY) {
+    pad.setInput({x: 0, y: 0, buttons: {}});
+    direct.active = true;
+  }
+  const useDirect = direct?.active && channel?.readyState === 'open';
+  const wait = motion && (x || y || aimX || aimY) && (useDirect
+    ? channel.bufferedAmount > 128 ? 12 : 0
+    : lastRelayMotion + relayInterval - now);
+  if (wait > 0) {
+    relayTimer ??= setTimeout(() => {
+      relayTimer = undefined;
+      publish(false, true);
+    }, wait);
+    return;
+  }
+  clearTimeout(relayTimer);
+  relayTimer = undefined;
+  if (useDirect) {
+    try {
+      channel.send(JSON.stringify([x, y, mask, aimX, aimY]));
+      return;
+    } catch {
+      direct.active = false;
+      direct.close();
+      lastAim = [NaN, NaN];
+    }
+  }
+  lastRelayMotion = now;
+  if (pad.status === 'connected' && sticks.aim && (lastAim[0] !== aimX || lastAim[1] !== aimY)) {
+    lastAim = [aimX, aimY];
     pad.send({aim: lastAim});
   }
-  pad.setInput({
-    x: sticks.move?.x ?? 0,
-    y: sticks.move?.y ?? 0,
-    buttons: Object.fromEntries([...actions].map(([number, action]) => ['b' + number, action.held])),
-  });
+  const buttons = {};
+  for (const [number] of actions) if (mask & (1 << number)) buttons['b' + number] = true;
+  pad.setInput({x, y, buttons});
 }
 
 function setStick(stick, x, y) {
   const scale = Math.max(1, Math.hypot(x, y));
-  stick.x = Math.round(x / scale * 100) / 100;
-  stick.y = Math.round(y / scale * 100) / 100;
+  const nextX = Math.round(x / scale * 100) / 100;
+  const nextY = Math.round(y / scale * 100) / 100;
+  if (nextX === stick.x && nextY === stick.y) return false;
+  stick.x = nextX;
+  stick.y = nextY;
   const travel = stick.element.clientWidth * .28;
   stick.element.style.setProperty('--x', stick.x * travel + 'px');
   stick.element.style.setProperty('--y', stick.y * travel + 'px');
   stick.element.classList.toggle('active', Boolean(stick.x || stick.y));
+  return true;
 }
 
 function installStick(element) {
   const stick = {element, x: 0, y: 0, pointer: null, keys: new Set()};
   sticks[element.dataset.stick] = stick;
-  const move = event => {
+  const move = (event, motion = false) => {
     const {left, top, width, height} = element.getBoundingClientRect();
     const screenX = (event.clientX - left - width / 2) / (width * .35);
     const screenY = (event.clientY - top - height / 2) / (height * .35);
     // Undo the portrait viewport's clockwise quarter-turn before sending game axes.
-    setStick(stick, portrait.matches ? screenY : screenX, portrait.matches ? -screenX : screenY);
-    if (!movementFrame) movementFrame = requestAnimationFrame(publish);
+    if (setStick(stick, portrait.matches ? screenY : screenX, portrait.matches ? -screenX : screenY)) {
+      publish(false, motion);
+    }
   };
   element.addEventListener('pointerdown', event => {
     if (event.button !== 0 || stick.pointer !== null) return;
@@ -127,7 +171,7 @@ function installStick(element) {
     move(event);
   });
   element.addEventListener('pointermove', event => {
-    if (event.pointerId === stick.pointer) move(event);
+    if (event.pointerId === stick.pointer) move(event, true);
   });
   for (const eventName of ['pointerup', 'pointercancel', 'lostpointercapture']) {
     element.addEventListener(eventName, event => {
@@ -614,6 +658,63 @@ function updateHoops(info) {
   $('hint').textContent = recovery ? `${view.hint} ${info.progress}/3 complete.` : view.hint;
 }
 
+async function openDirectLink() {
+  if (!managed || direct || document.hidden || pad?.status !== 'connected' ||
+      performance.now() < nextDirectAttempt) return;
+  nextDirectAttempt = performance.now() + 30_000;
+  const peer = localPeer();
+  if (!peer) return;
+  const channel = peer.createDataChannel('couch-input');
+  const link = {peer, channel, id: Array.from(crypto.getRandomValues(new Uint32Array(2))).join('-')};
+  direct = link;
+  const timer = setTimeout(() => { if (channel.readyState !== 'open') close(); }, 4500);
+  function close() {
+    if (direct !== link) return;
+    direct = undefined;
+    clearTimeout(timer);
+    clearInterval(link.pulseTimer);
+    peer.close();
+    if (link.active) {
+      lastAim = [NaN, NaN];
+      publish();
+    }
+  }
+  channel.onopen = () => {
+    clearTimeout(timer);
+    let lastPong = performance.now();
+    let sentAt, ping;
+    channel.onmessage = ({data}) => {
+      if (data !== 'pong' || sentAt === undefined) return;
+      lastPong = performance.now();
+      ping = lastPong - sentAt;
+      sentAt = undefined;
+    };
+    link.pulseTimer = setInterval(() => {
+      if (performance.now() - lastPong > 1200 || channel.readyState !== 'open') return close();
+      if (sentAt !== undefined) return;
+      sentAt = performance.now();
+      try {
+        channel.send(ping === undefined ? 'ping' : 'ping:' + ping.toFixed(1));
+      } catch { close(); }
+    }, 400);
+    publish();
+  };
+  channel.onclose = close;
+  peer.onconnectionstatechange = () => {
+    if (['failed', 'disconnected', 'closed'].includes(peer.connectionState)) close();
+  };
+  link.answer = async sdp => {
+    try {
+      if (peer.signalingState === 'have-local-offer') await peer.setRemoteDescription({type: 'answer', sdp});
+    } catch { close(); }
+  };
+  link.close = close;
+  try {
+    const sdp = await localDescription(peer, await peer.createOffer());
+    if (direct === link && sdp?.length < 5500) send({directOffer: {id: link.id, sdp}});
+  } catch { close(); }
+}
+
 async function connect() {
   try {
     const {join} = await import(relay + '/joinstick/client.js');
@@ -623,7 +724,20 @@ async function connect() {
     params.set('r', code);
     params.set('s', pad.slot);
     history.replaceState(null, '', '?' + params);
-    pad.on('status', roomStatus);
+    pad.on('status', status => {
+      if (status !== 'connected') direct?.close();
+      roomStatus(status);
+      if (status === 'connected') openDirectLink();
+    });
+    pad.on('message', data => {
+      const answer = data?.directAnswer;
+      if (direct && answer?.id === direct.id && typeof answer.sdp === 'string') direct.answer(answer.sdp);
+      if (typeof data?.inputPong === 'number') {
+        const latency = performance.now() - data.inputPong;
+        relayInterval = latency > 350 ? 50 : latency > 170 ? 33 : 1000 / 60;
+        send({relayPing: latency});
+      }
+    });
     pad.on('error', error => {
       $('status').textContent = error.code === 'kicked' ? 'The host disconnected this phone.' : 'Connection lost.';
     });
@@ -652,6 +766,14 @@ async function connect() {
     if (gameKey === 'track') pad.on('message', ({track} = {}) => updateTrack(track));
     if (gameKey === 'ringout') pad.on('message', ({ringout} = {}) => updateRingout(ringout));
     roomStatus('connected');
+    openDirectLink();
+    const probe = () => {
+      send({inputPing: performance.now()});
+      openDirectLink();
+    };
+    probe();
+    setInterval(probe, 6000);
+    addEventListener('pagehide', () => direct?.close());
   } catch (error) {
     roomStatus('closed');
     $('status').textContent = error.code === 'room-not-found' ? 'Room not found. Check the code or ask the host for a new one.'
