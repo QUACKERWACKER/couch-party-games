@@ -71,19 +71,8 @@ const nearest = (point, candidates) => candidates.reduce((best, p) =>
   !best || distance(p, point) < distance(best, point) ? p : best, null);
 
 function tone(notes) {
-  if (!audio || audio.state !== 'running') return;
-  notes.forEach((frequency, i) => {
-    const start = audio.currentTime + i * .067;
-    const wave = audio.createOscillator();
-    const gain = audio.createGain();
-    wave.type = 'triangle';
-    wave.frequency.value = frequency;
-    gain.gain.setValueAtTime(.095, start);
-    gain.gain.exponentialRampToValueAtTime(.001, start + .12);
-    wave.connect(gain).connect(audio.destination);
-    wave.start(start);
-    wave.stop(start + .12);
-  });
+  if (audio?.state !== 'running') return;
+  notes.forEach((frequency, i) => playGameTone(audio, frequency, .12, 'triangle', .095, i * .067));
 }
 
 function call(message, duration = 1.1) {
@@ -223,17 +212,15 @@ function renderDraft() {
     return `${names[which]} · ${roster.join(' / ')}`;
   }).join('  |  ');
   const cards = draft.pool.map((prospect, i) => {
-    const card = document.createElement('button');
-    card.type = 'button';
-    const title = document.createElement('strong');
-    title.textContent = prospect.name;
-    const role = document.createElement('small');
-    role.textContent = prospect.role;
-    const ratings = document.createElement('small');
-    ratings.className = 'rating-line';
-    ratings.textContent = attributes.map((name, j) => `${name} ${prospect.values[j]}`).join(' · ');
-    const traits = document.createElement('small');
-    traits.textContent = `Best: ${attributes[prospect.values.indexOf(Math.max(...prospect.values))]} · Weakest: ${attributes[prospect.values.indexOf(Math.min(...prospect.values))]}`;
+    const card = gameElement('button');
+    const title = gameElement('strong', {text: prospect.name});
+    const role = gameElement('small', {text: prospect.role});
+    const ratings = gameElement('small', {
+      className: 'rating-line', text: attributes.map((name, j) => `${name} ${prospect.values[j]}`).join(' · '),
+    });
+    const strongest = attributes[prospect.values.indexOf(Math.max(...prospect.values))];
+    const weakest = attributes[prospect.values.indexOf(Math.min(...prospect.values))];
+    const traits = gameElement('small', {text: `Best: ${strongest} · Weakest: ${weakest}`});
     card.append(title, role, ratings, traits);
     card.addEventListener('click', () => pickCPU(i));
     card.addEventListener('focus', () => {
@@ -717,13 +704,7 @@ function showBoxScore() {
     const values = [p.statsLabel, stat.points, `${stat.fieldGoals}–${stat.shots}`,
       `${stat.threes}–${stat.threeAttempts}`, `${stat.freeThrows}–${stat.freeThrowAttempts}`,
       stat.rebounds, stat.assists, stat.steals, stat.blocks, stat.fouls];
-    const cells = values.map((value, column) => {
-      const cell = document.createElement(column === 0 ? 'th' : 'td');
-      if (column === 0) cell.scope = 'row';
-      cell.textContent = value;
-      return cell;
-    });
-    rows[i].replaceChildren(...cells);
+    rows[i].replaceChildren(...gameTableCells(values));
   });
 }
 
@@ -1478,17 +1459,19 @@ function draw(now) {
     rect(ctx, '#ff786d', 0, 496, 960, 4);
   }
   for (let i = 0; i < score.length; i++) {
-    $('score' + i).textContent = String(score[i]).padStart(2, '0');
-    $('fouls' + i).textContent = `${fouls[i]} ${fouls[i] === 1 ? 'FOUL' : 'FOULS'}`;
+    updateGameText($('score' + i), String(score[i]).padStart(2, '0'));
+    updateGameText($('fouls' + i), `${fouls[i]} ${fouls[i] === 1 ? 'FOUL' : 'FOULS'}`);
   }
-  $('period').textContent = active?.kind === 'halftime' ? 'HALF' : quarter >= 5 ? `OT${quarter - 4}` : 'Q' + quarter;
-  $('clock').textContent = time > 0 && time < 5 ? (Math.ceil(time * 10) / 10).toFixed(1)
-    : '0:' + String(Math.ceil(time)).padStart(2, '0');
+  updateGameText($('period'), active?.kind === 'halftime' ? 'HALF' : quarter >= 5 ? `OT${quarter - 4}` : 'Q' + quarter);
+  updateGameText($('clock'), time > 0 && time < 5 ? (Math.ceil(time * 10) / 10).toFixed(1)
+    : '0:' + String(Math.ceil(time)).padStart(2, '0'));
   const clockRunning = mode === 'live' && !active && !inbound && time > 0 && flight?.type !== 'shot' && !loose;
   const expired = active?.kind === 'violation';
-  $('shot-timer').dataset.state = expired || (clockRunning && shotClock <= 5) ? 'urgent' : clockRunning ? 'running' : 'stopped';
-  $('shot-clock').textContent = expired ? '0.0'
-    : shotClock <= 5 ? (Math.ceil(shotClock * 10) / 10).toFixed(1) : Math.ceil(shotClock);
+  const timerState = expired || (clockRunning && shotClock <= 5) ? 'urgent' : clockRunning ? 'running' : 'stopped';
+  const shotTimer = $('shot-timer');
+  if (shotTimer.dataset.state !== timerState) shotTimer.dataset.state = timerState;
+  updateGameText($('shot-clock'), expired ? '0.0'
+    : shotClock <= 5 ? (Math.ceil(shotClock * 10) / 10).toFixed(1) : Math.ceil(shotClock));
 }
 
 $('start').addEventListener('click', menuAction);

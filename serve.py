@@ -59,7 +59,7 @@ class GameFiles(QRResponse, SimpleHTTPRequestHandler):
     def send_head(self):
         url_path = urlsplit(self.path).path
         path = Path(self.translate_path(url_path)).resolve()
-        if url_path not in ("/", "/index.html", "/grid-navigation.js") and url_path not in COVER_PATHS and not any(
+        if url_path not in ("/", "/index.html", "/grid-navigation.js", "/game-runtime.js") and url_path not in COVER_PATHS and not any(
             url_path.startswith(route)
             and (path == folder or (folder in path.parents and path.suffix in ASSET_TYPES))
             for route in GAMES.values()

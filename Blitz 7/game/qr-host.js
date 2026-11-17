@@ -6,6 +6,7 @@
   const image=document.getElementById('phone-qr');
   const hint=document.getElementById('qr-hint');
   const phones=new Map();
+  const bits={0:0,1:1,2:2,3:3,5:4,9:5};
   let describe=()=>({}), enabled=false;
 
   async function post(path,body) {
@@ -40,7 +41,6 @@
       const now=performance.now();
       return [...phones].map(([index,state])=>{
         const current=state.events.shift()||[...state.axes,state.mask];
-        const bits={0:0,1:1,2:2,3:3,5:4,9:5};
         return {connected:true,index,timestamp:now,axes:current.slice(0,2),
           buttons:Array.from({length:16},(_,i)=>({pressed:i in bits && !!(current[2]&(1<<bits[i]))}))};
       });

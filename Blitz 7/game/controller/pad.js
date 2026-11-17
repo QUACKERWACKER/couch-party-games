@@ -21,6 +21,7 @@ function state() {return [x,y,mask];}
 function mark() {
   dirty=true;
   pending.push(state());
+  if (pending.length > 48) pending.shift();
   transmit();
 }
 
@@ -167,5 +168,6 @@ for(const element of [...buttons,stick]) {
   element.addEventListener('contextmenu',event=>event.preventDefault());
 }
 window.addEventListener('blur',neutral);
+window.addEventListener('pagehide',neutral);
 document.addEventListener('visibilitychange',()=>{if(document.hidden) neutral();});
 setInterval(transmit,33);

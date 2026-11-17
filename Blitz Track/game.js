@@ -12,6 +12,7 @@ const held = new Set();
 const touches = new Map();
 const previousPads = new Map();
 const padActions = [[0, 'j'], [1, 'k'], [3, 'i'], [2, 'l']];
+const buttonByKey = new Map(padActions.map(([index, key]) => [key, index]));
 const gateActions = {jump: 'Jump', splash: 'Hold Splash', pass: 'Pass baton', cup: 'Grab cup'};
 const canvas = document.querySelector('canvas');
 const ctx = canvas.getContext('2d');
@@ -34,16 +35,8 @@ let soundOn = true;
 let audio;
 let lastFrame = performance.now();
 
-function element(tag, label, className) {
-  const node = document.createElement(tag);
-  node.textContent = label;
-  if (className) node.className = className;
-  return node;
-}
-
 function button(label, action, pressed) {
-  const node = element('button', label);
-  node.type = 'button';
+  const node = gameElement('button', {text: label});
   node.onclick = action;
   if (pressed !== undefined) node.setAttribute('aria-pressed', pressed);
   return node;
@@ -79,22 +72,11 @@ function enableSound() {
 
 function tones(notes, type = 'triangle', duration = .11) {
   if (!soundOn || audio?.state !== 'running') return;
-  notes.forEach((frequency, i) => {
-    const oscillator = audio.createOscillator();
-    const gain = audio.createGain();
-    const start = audio.currentTime + i * duration * .88;
-    oscillator.type = type;
-    oscillator.frequency.value = frequency;
-    gain.gain.setValueAtTime(.085, start);
-    gain.gain.exponentialRampToValueAtTime(.001, start + duration);
-    oscillator.connect(gain).connect(audio.destination);
-    oscillator.start(start);
-    oscillator.stop(start + duration);
-  });
+  notes.forEach((frequency, i) => playGameTone(audio, frequency, duration, type, .085, i * duration * .88));
 }
 
 function setStatus(message) {
-  if ($('status').textContent !== message) $('status').textContent = message;
+  updateGameText($('status'), message);
 }
 
 function refreshScore(label, name) {
@@ -121,12 +103,12 @@ function renderSetup() {
   $('switch').disabled = !keyboard;
   $('rosters').replaceChildren(...teams.map((name, team) => {
     const names = available(team).map((player, i) => player.name + (i === 0 ? ' ★' : ''));
-    return element('div', `${name} · ${names.join(', ') || 'CPU'}`, team ? 'cool' : 'hot');
+    return gameElement('div', {text: `${name} · ${names.join(', ') || 'CPU'}`, className: team ? 'cool' : 'hot'});
   }));
   $('program').replaceChildren(...program.map((id, index) => {
-    const row = element('li', '');
+    const row = gameElement('li');
     const name = byId.get(id).name;
-    row.append(element('span', name));
+    row.append(gameElement('span', {text: name}));
     for (const [team, side] of teams.entries()) {
       const select = document.createElement('select');
       select.setAttribute('aria-label', `Choose the ${side} player for ${name}`);
@@ -147,8 +129,8 @@ function renderSetup() {
   $('groups').replaceChildren(...groups.map((group, i) => {
     const category = document.createElement('details');
     category.open = document.querySelectorAll('#groups details')[i]?.open ?? i === 0;
-    category.append(element('summary', group));
-    const chips = element('div', '', 'button-row');
+    category.append(gameElement('summary', {text: group}));
+    const chips = gameElement('div', {text: '', className: 'button-row'});
     for (const event of events.filter(candidate => candidate.group === group)) {
       const selected = program.includes(event.id);
       chips.append(button(event.name, () => {
@@ -253,7 +235,7 @@ function renderAssignments() {
   balanceDuel();
   $('assignments').replaceChildren(...teams.map((team, index) => {
     const entry = eventEntry(index);
-    const caption = element('label', team + ' ', index ? 'cool' : 'hot');
+    const caption = gameElement('label', {text: team + ' ', className: index ? 'cool' : 'hot'});
     const select = document.createElement('select');
     selectPlayer(select, index, entry.player?.id);
     select.disabled = entry.locked || !entry.roster.length;
@@ -299,8 +281,8 @@ function renderTutorial(event) {
   }
   rows.push(['X / L · Dirty trick', `${event.trick}. Try it while the official looks away. Three flags disqualify you.`]);
   $('tutorial-controls').replaceChildren(...rows.map(([control, instructions]) => {
-    const row = element('li', '');
-    row.append(element('kbd', control), element('span', instructions));
+    const row = gameElement('li');
+    row.append(gameElement('kbd', {text: control}), gameElement('span', {text: instructions}));
     return row;
   }));
   $('tutorial-goal').textContent = event.stages ? 'Highest score wins.' : 'First across the finish wins.';
@@ -450,8 +432,7 @@ function activeHuman(runner) {
 
 function downFor(runner, key) {
   if (runner.id === 'keyboard') return held.has(key) || [...touches.values()].includes(key);
-  const index = {j: 0, k: 1, i: 3, l: 2}[key];
-  return previousPads.get(runner.id)?.has(index) ?? false;
+  return Boolean(previousPads.get(runner.id) & (1 << buttonByKey.get(key)));
 }
 
 function updateRace(runner, dt) {
@@ -611,7 +592,7 @@ function finishHeat() {
   $('assignments').hidden = true;
   $('tutorial').hidden = true;
   $('results').hidden = false;
-  $('results').replaceChildren(...results.map(result => element('li', result)));
+  $('results').replaceChildren(...results.map(result => gameElement('li', {text: result})));
   const last = round + 1 === program.length;
   const champion = scores[0] === scores[1] ? 'Meet tied!' : `${teams[scores[0] > scores[1] ? 0 : 1]} win the meet!`;
   $('desk-title').textContent = last ? champion : headline;
@@ -720,9 +701,9 @@ function draftController(player) {
 
 function managePads() {
   const phase = screen;
-  const pads = [...(navigator.getGamepads?.() ?? []), ...(window.couchJoinstick?.sample() ?? [])].filter(Boolean);
+  const pads = gameControllerInputs();
   const nextConnected = new Set(pads.map(pad => String(pad.index)));
-  const changed = [...connected].some(id => !nextConnected.has(id)) || [...nextConnected].some(id => !connected.has(id));
+  const changed = connected.size !== nextConnected.size || [...connected].some(id => !nextConnected.has(id));
   if (screen === 'live') {
     for (const runner of heat.runners) {
       if (!runner.id || runner.id === 'keyboard') continue;
@@ -737,9 +718,13 @@ function managePads() {
   connected = nextConnected;
   for (const pad of pads) {
     const id = String(pad.index);
-    const last = previousPads.get(id) ?? new Set();
-    const down = new Set(pad.buttons.flatMap((value, index) => value.pressed ? [index] : []));
-    const press = index => down.has(index) && !last.has(index);
+    const last = previousPads.get(id) ?? 0;
+    let down = 0;
+    for (let index = 0; index <= 15; index++) {
+      if (pad.buttons[index]?.pressed) down |= 1 << index;
+    }
+    const changedButtons = down ^ last;
+    const press = index => Boolean(down & changedButtons & (1 << index));
     previousPads.set(id, down);
     if (screen !== phase) continue;
     if (pad.inputCanceled) {
@@ -786,7 +771,8 @@ function managePads() {
     const runner = screen === 'live' && heat.runners.find(candidate => candidate.id === id);
     if (runner) {
       for (const [index, key] of padActions) {
-        if (down.has(index) !== last.has(index)) action(runner, key, down.has(index));
+        const bit = 1 << index;
+        if (changedButtons & bit) action(runner, key, Boolean(down & bit));
       }
     }
   }
@@ -809,7 +795,7 @@ document.addEventListener('keydown', event => {
   const key = event.key.toLowerCase();
   if (document.querySelector('dialog[open]')) return;
   if (screen === 'live' && key === 'escape' && !event.repeat) pause();
-  if (!['j', 'k', 'i', 'l'].includes(key) || screen !== 'live') return;
+  if (!buttonByKey.has(key) || screen !== 'live') return;
   event.preventDefault();
   if (!held.has(key)) {
     held.add(key);
@@ -932,7 +918,11 @@ function mascot(x, floor, team, time, {jump = 0, slow = false, stick = false, of
   ctx.restore();
 }
 
-function stadium() {
+const stadium = document.createElement('canvas');
+stadium.width = canvas.width;
+stadium.height = canvas.height;
+
+function drawStadium() {
   const sky = ctx.createLinearGradient(0, 0, 0, 130);
   sky.addColorStop(0, '#241b43');
   sky.addColorStop(1, '#594263');
@@ -952,6 +942,7 @@ function stadium() {
   box(0, 211, 960, 77, '#9c413c');
   for (const y of [128, 208, 289]) box(0, y, 960, 3, '#ffead09e');
   box(0, 293, 960, 57, '#231c30');
+  stadium.getContext('2d').drawImage(canvas, 0, 0);
 }
 
 function drawGate(gate, y) {
@@ -1078,7 +1069,7 @@ function fieldView() {
 }
 
 function draw() {
-  stadium();
+  ctx.drawImage(stadium, 0, 0);
   if (heat?.event.stages) fieldView();
   else raceView();
   const observed = heat && watching();
@@ -1101,7 +1092,7 @@ function draw() {
     else if (heat.t < 0) message = String(Math.ceil(-heat.t));
     else if (heat.t < .4) message = 'GO!';
   }
-  if ($('call').textContent !== message) $('call').textContent = message;
+  updateGameText($('call'), message);
 }
 
 function frame(now) {
@@ -1113,6 +1104,7 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+drawStadium();
 renderSetup();
 window.couchJoinstick?.describe(describePhones);
 requestAnimationFrame(frame);

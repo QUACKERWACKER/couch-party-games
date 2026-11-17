@@ -75,11 +75,15 @@ function buildMap(spec) {
   const safeFootprint = (x,y,r) => [-r,0,r].every(dx => [-r,0,r].every(dy=>floor(x+dx,y+dy))) &&
     !spawnHazards.some(([hx,hy,w,h]) => x+r>=hx && x-r<=hx+w && y+r>=hy && y-r<=hy+h);
   const ferryAt = (x,y,time) => ferryRects(time).find(rect => contains(rect,x,y));
+  let ferryTime, ferries = [];
   function ferryRects(time) {
-    return (spec.ferries || []).map(([x,y,w,h,dx,dy,period]) => {
+    if (time === ferryTime || !spec.ferries?.length) return ferries;
+    ferryTime = time;
+    ferries = spec.ferries.map(([x,y,w,h,dx,dy,period]) => {
       const t=(1-Math.cos(2*Math.PI*time/period))/2;
       return [x+dx*t,y+dy*t,w,h];
     });
+    return ferries;
   }
   const bounds = {left:xs[0], right:xs.at(-1), top:ys[0], bottom:ys.at(-1)};
   const width = bounds.right-bounds.left, height = bounds.bottom-bounds.top;
@@ -116,20 +120,30 @@ function chooseMap(previous, count, random = Math.random) {
 }
 
 function safeSpawn(map, others = [], preferred = {x:500,y:240}, obstacles = [], radius = 18) {
-  const spacing = point => others.reduce((distance,p) =>
-    Math.min(distance, Math.max(Math.abs(point.x-p.x),Math.abs(point.y-p.y)) - radius - (p.radius || 18)), 110);
-  const rating = point => spacing(point) - .045 * Math.hypot(point.x-preferred.x,point.y-preferred.y);
-  const clear = map.spawns.filter(({x,y}) => !obstacles.some(wall =>
-    x+radius>wall.x && x-radius<wall.x+wall.w && y+radius>wall.y && y-radius<wall.y+wall.h));
-  const separated = clear.filter(point => spacing(point) >= 2);
-  return (separated.length ? separated : clear).reduce((best, point) =>
-    !best || rating(point)>rating(best) ? point : best, null);
+  let best = null, bestRating = -Infinity, separated = false;
+  for (const point of map.spawns) {
+    if (spawnBlocked(point, radius, obstacles)) continue;
+    const spacing = others.reduce((distance,p) => Math.min(distance,
+      Math.max(Math.abs(point.x-p.x),Math.abs(point.y-p.y)) - radius - (p.radius || 18)), 110);
+    const clear = spacing >= 2;
+    if (separated && !clear) continue;
+    const rating = spacing - .045 * Math.hypot(point.x-preferred.x,point.y-preferred.y);
+    if (!best || clear !== separated || rating > bestRating) {
+      best = point;
+      bestRating = rating;
+      separated = clear;
+    }
+  }
+  return best;
+}
+
+function spawnBlocked({x,y}, radius, walls) {
+  return walls.some(wall => x+radius>wall.x && x-radius<wall.x+wall.w &&
+    y+radius>wall.y && y-radius<wall.y+wall.h);
 }
 
 function randomRoundSpawn(map, occupied, previous, walls, random = Math.random) {
-  const candidates = map.spawns.filter(({x,y}) => !walls.some(wall =>
-    x+18>wall.x && x-18<wall.x+wall.w && y+18>wall.y && y-18<wall.y+wall.h));
-  const options = candidates.map(point => ({
+  const options = map.spawns.filter(point => !spawnBlocked(point, 18, walls)).map(point => ({
     point,
     clearance: occupied.reduce((distance, other) => Math.min(distance,
       Math.max(Math.abs(point.x-other.x),Math.abs(point.y-other.y))), Infinity),

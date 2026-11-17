@@ -45,7 +45,7 @@ const blitzModes = {
 };
 const hoopsModes = {
   join: {labels: {0: 'Join'}, hint: 'Tap Join to claim a player.'},
-  lobby: {labels: {0: 'Joined', 2: 'Leave team', 5: 'Switch team', 9: 'Start'}, hint: 'Choose a team, then start the draft or tip off.'},
+  lobby: {labels: {2: 'Leave team', 5: 'Switch team', 9: 'Start'}, hint: 'Choose a team, then start the draft or tip off.'},
   full: {labels: {}, hint: 'All six spots are taken.'},
   wait: {labels: {}, hint: 'You can join at the next lobby.'},
   draft: {labels: {0: 'Draft player'}, move: 'Browse players', hint: 'Move the stick to browse. Check ratings on the shared screen.'},
@@ -82,12 +82,25 @@ let nextDirectAttempt = 0;
 let relayInterval = 1000 / 60;
 let lastAim = [0, 0];
 let blitzBook, blitzMenu, blitzChoices, blitzPreview;
-let bedrockState, bedrockPicker, bedrockHeartbeat;
-let hoopsPulseTimer = 0;
-let trackPulseTimer = 0;
+let bedrockState, bedrockPicker, heartbeatTimer;
+const heartbeats = {
+  blitz: {interval: 400, message: {blitzActive: true}},
+  track: {interval: 400, message: {trackPulse: true}},
+  bedrock: {interval: 400, message: {bedrock: {live: true}}},
+  hoops: {interval: 450, message: {hoopsPulse: true}},
+  ringout: {interval: 500, message: {ringoutActive: true}},
+};
+const cancellations = {
+  blitz: {blitzActive: false}, hoops: {hoopsCancel: true}, ringout: {cancel: true}, track: {trackCancel: true},
+};
+const departures = {blitz: {blitzLeave: true}, ringout: {leave: true}, bedrock: {bedrock: {leave: true}}};
 
 function send(message) {
-  if (pad?.status === 'connected') pad.send(message);
+  if (message && pad?.status === 'connected') pad.send(message);
+}
+
+function heartbeat() {
+  if (!document.hidden) send(heartbeats[gameKey]?.message);
 }
 
 function publish(force = false, motion = false) {
@@ -281,15 +294,8 @@ function installAction(number, label) {
   });
 }
 
-function blitzActivity(active) {
-  if (gameKey === 'blitz' && pad?.status === 'connected') pad.send({blitzActive: active});
-}
-
 function neutral() {
-  blitzActivity(false);
-  if (gameKey === 'hoops' && pad?.status === 'connected') pad.send({hoopsCancel: true});
-  if (gameKey === 'ringout' && pad?.status === 'connected') pad.send({cancel:true});
-  if (gameKey === 'track' && pad?.status === 'connected') pad.send({trackCancel: true});
+  send(cancellations[gameKey]);
   for (const stick of Object.values(sticks)) {
     stick.pointer = null;
     stick.keys.clear();
@@ -304,12 +310,8 @@ function neutral() {
     if (action.element.dataset.inactive === 'true') action.element.hidden = true;
   }
   // Update the SDK’s queued state even if the socket has already dropped.
-  publish(gameKey === 'blitz' || gameKey === 'hoops');
+  publish(true);
   lastAim = [0, 0];
-}
-
-function bedrockLive(live) {
-  if (gameKey === 'bedrock' && pad?.status === 'connected') pad.send({bedrock: {live}});
 }
 
 function closeBedrockPicker() {
@@ -417,38 +419,16 @@ function roomStatus(status) {
   document.querySelector('.join-recovery').hidden = status !== 'closed';
   $('status').textContent = connected ? 'Connected' : status === 'closed' ? 'Disconnected' : 'Reconnecting…';
   if (!connected && blitzMenu) {blitzMenu.hidden = true; }
-  clearInterval(bedrockHeartbeat);
-  clearInterval(trackPulseTimer);
+  clearInterval(heartbeatTimer);
   if (connected) {
     $('player').textContent = 'Phone ' + pad.slot;
     if (gameKey === 'ringout') updateRingout();
-    if (gameKey === 'track') {
-      updateTrack();
-      const pulse = () => {
-        if (!document.hidden && pad.status === 'connected') pad.send({trackPulse: true});
-      };
-      pulse();
-      trackPulseTimer = setInterval(pulse, 400);
-    }
-    if (gameKey === 'bedrock') {
-      neutral();
-      bedrockLive(!document.hidden);
-      bedrockHeartbeat = setInterval(() => {
-        if (!document.hidden) bedrockLive(true);
-      }, 400);
-    }
+    if (gameKey === 'track') updateTrack();
+    if (gameKey === 'bedrock') neutral();
     pad.send({ready: true, couchGame: gameKey});
-    blitzActivity(!document.hidden);
-    if (gameKey === 'ringout') publishRingoutHeartbeat();
-    if (gameKey === 'hoops') {
-      pad.send({hoopsPulse: true});
-      clearInterval(hoopsPulseTimer);
-      hoopsPulseTimer = setInterval(() => {
-        if (!document.hidden && pad.status === 'connected') pad.send({hoopsPulse: true});
-      }, 450);
-    }
+    heartbeat();
+    heartbeatTimer = setInterval(heartbeat, heartbeats[gameKey].interval);
   } else {
-    clearInterval(hoopsPulseTimer);
     neutral();
     closeBedrockPicker();
   }
@@ -464,19 +444,15 @@ function emphasizeAction(preferred = 0) {
 
 function updateTrack(info) {
   const labels = info?.buttons ?? {0: 'Join'};
-  for (const [number, action] of actions) {
-    const label = labels[number];
-    // Keep a captured button visible until its finger lifts, even when the stage changes.
-    setActionLabel(action, label);
-  }
+  updateActionLabels(labels);
   emphasizeAction(info?.primary);
   $('player').textContent = info?.player ?? 'Phone ' + pad.slot;
   $('status').textContent = info?.team ?? 'Connected';
   $('hint').textContent = info?.hint ?? game.hint;
 }
 
-function blitzAction(number, label) {
-  setActionLabel(actions.get(number), label);
+function updateActionLabels(labels) {
+  for (const [number, action] of actions) setActionLabel(action, labels[number]);
 }
 
 function installBlitzMenu() {
@@ -596,7 +572,7 @@ function updateBlitz(info) {
   const mode = info?.mode;
   const labels = Object.hasOwn(blitzModes, mode) ? blitzModes[mode] : null;
   if (!info?.player || !labels) {
-    for (const [number] of game.actions) blitzAction(number, number === 0 ? 'Join' : null);
+    updateActionLabels({0: 'Join'});
     emphasizeAction();
     $('player').textContent = 'Phone ' + pad.slot;
     $('status').textContent = 'Connected';
@@ -607,18 +583,16 @@ function updateBlitz(info) {
   const [a, b, x, y, hint] = labels;
   const book = (mode === 'ready' || mode === 'defenseReady') && info.playbook?.kind ? info.playbook : null;
   const selected = book?.options[book.selected]?.name;
-  [selected === 'PUNT' ? 'Punt' : a, b, x, y].forEach((label, index) => blitzAction(index, label));
-  blitzAction(5, mode === 'lobby' ? (info.host ? 'Team / CPU' : 'Switch team') : null);
-  blitzAction(9, info.host ? ({lobby: 'Start', paused: 'Resume', final: 'Back to lobby'}[mode] || 'Pause') : null);
+  updateActionLabels({
+    0: selected === 'PUNT' ? 'Punt' : a, 1: b, 2: x, 3: y,
+    5: mode === 'lobby' ? (info.host ? 'Team / CPU' : 'Switch team') : null,
+    9: info.host ? ({lobby: 'Start', paused: 'Resume', final: 'Back to lobby'}[mode] || 'Pause') : null,
+  });
   emphasizeAction(mode === 'runner' ? 1 : 0);
   renderBlitzBook(book);
   $('player').textContent = info.player + (info.host ? ' ★' : '');
   $('status').textContent = info.team || 'Connected';
   $('hint').textContent = book ? '' : mode === 'lobby' && !info.host ? 'Switch teams or customize your boots and helmet.' : hint;
-}
-
-function publishRingoutHeartbeat() {
-  if (!document.hidden && pad?.status === 'connected') pad.send({ringoutActive:true});
 }
 
 function updateRingout(info) {
@@ -631,9 +605,7 @@ function updateRingout(info) {
     setStick(aim, 0, 0);
     publish();
   }
-  for (const [number, action] of actions) {
-    setActionLabel(action, buttons[number]);
-  }
+  updateActionLabels(buttons);
   emphasizeAction(info?.primary);
   $('player').textContent = info?.player || 'Phone ' + pad.slot;
   $('hint').textContent = info?.hint ?? game.hint;
@@ -641,10 +613,7 @@ function updateRingout(info) {
 
 function updateHoops(info) {
   const view = hoopsModes[info?.mode] || hoopsModes.join;
-  for (const [number, action] of actions) {
-    const label = view.labels[number];
-    setActionLabel(action, label === 'Joined' ? null : label);
-  }
+  updateActionLabels(view.labels);
   const recovery = view === hoopsModes.recovery;
   const recoveryScreen = recovery || view === hoopsModes.recoveryPreview || view === hoopsModes.recoveryWait;
   $('controls').classList.toggle('hoops-recovery', recoveryScreen);
@@ -755,16 +724,12 @@ async function connect() {
       menuSelection = data.couchSelection;
       updateLobbySelection();
     });
-    if (gameKey === 'blitz') pad.on('message', ({blitz} = {}) => updateBlitz(blitz));
-    if (gameKey === 'bedrock') pad.on('message', data => {
-      if (data && Object.hasOwn(data, 'bedrock')) updateBedrock(data.bedrock);
+    const update = {blitz: updateBlitz, bedrock: updateBedrock, hoops: updateHoops,
+      track: updateTrack, ringout: updateRingout}[gameKey];
+    if (update) pad.on('message', data => {
+      if (data && Object.hasOwn(data, gameKey)) update(data[gameKey]);
     });
-    if (gameKey === 'hoops') {
-      pad.on('message', ({hoops} = {}) => updateHoops(hoops));
-      updateHoops(null);
-    }
-    if (gameKey === 'track') pad.on('message', ({track} = {}) => updateTrack(track));
-    if (gameKey === 'ringout') pad.on('message', ({ringout} = {}) => updateRingout(ringout));
+    if (gameKey === 'hoops') updateHoops();
     roomStatus('connected');
     openDirectLink();
     const probe = () => {
@@ -853,13 +818,6 @@ if (lobby && validCode) {
   installStick(document.querySelector('[data-stick="move"]'));
   installAction(0, 'Play');
   installProfileEditor();
-  addEventListener('blur', neutral);
-  portrait.addEventListener('change', neutral);
-  addEventListener('pagehide', neutral);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) neutral(); });
-  $('retry').onclick = () => location.reload();
-  $('leave').onclick = () => pad.leave();
-  connect();
 } else if (game && validCode) {
   document.body.dataset.game = gameKey;
   document.querySelector('h1').textContent = game.title;
@@ -877,37 +835,35 @@ if (lobby && validCode) {
   }
   if (gameKey === 'blitz') {
     installBlitzMenu();
-    for (const [number] of game.actions) blitzAction(number, number === 0 ? 'Join' : null);
-    setInterval(() => { if (!document.hidden) blitzActivity(true); }, 400);
+    updateActionLabels({0: 'Join'});
   }
-  $('retry').onclick = () => location.reload();
-  $('leave').onclick = () => { neutral(); if (gameKey === 'ringout') pad.send({leave:true}); if (gameKey === 'bedrock') pad.send({bedrock: {leave: true}}); if (gameKey === 'blitz') pad.send({blitzLeave: true}); pad.leave(); };
   const surface = document.querySelector('main');
   for (const name of ['contextmenu', 'dragstart', 'selectstart']) {
     surface.addEventListener(name, event => {
       if (!event.target.closest('select')) event.preventDefault();
     });
   }
+}
+if (validCode && (lobby || game)) {
+  $('retry').onclick = () => location.reload();
+  $('leave').onclick = () => {
+    if (!lobby) neutral();
+    send(departures[gameKey]);
+    pad.leave();
+  };
   addEventListener('blur', neutral);
   portrait.addEventListener('change', neutral);
   function suspendControls() {
     neutral();
     closeBedrockPicker();
-    bedrockLive(false);
+    if (gameKey === 'bedrock') send({bedrock: {live: false}});
   }
   addEventListener('pagehide', suspendControls);
-  addEventListener('pageshow', () => blitzActivity(!document.hidden));
+  addEventListener('pageshow', heartbeat);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) suspendControls();
-    else {
-      blitzActivity(true);
-      bedrockLive(true);
-    }
+    else heartbeat();
   });
-  if (gameKey === 'ringout') {
-    setInterval(publishRingoutHeartbeat, 500);
-    document.addEventListener('visibilitychange', publishRingoutHeartbeat);
-  }
   connect();
 } else {
   $('status').textContent = code ? 'Check the four-letter code shown on the shared screen.'

@@ -31,7 +31,7 @@ const keys = new Set();
 let roster=[], host=null, sequence=0, mode='lobby', previous=new Map();
 let teams, players=[], units=[], shots=[], particles=[], time=0, breachAt=null, result;
 let message='', messageUntil=0, audio;
-let terrain, rock, ore, terrainImage, dirty=true, previousScan=0;
+let terrain, rock, ore, terrainImage, dirty=true, tunnelChanged=true, previousScan=0;
 let round=0, caches=[], relay=null, seatsPerTeam=1;
 ground.width=NX;
 ground.height=NY;
@@ -59,11 +59,14 @@ function makeTerrain() {
   terrainImage=terrainCtx.createImageData(NX,NY);
   const crewFactor=1+Math.min(3,teamSize()-1)*.40;
   for (let iy=0;iy<NY;iy++) {
+    const y=iy*STEP+2;
+    const seam=Math.sin(y*.028+round)*23+Math.sin(y*.081)*12;
+    const fortDepth=215+Math.sin(y*.045)*10;
+    const coreVariation=Math.cos(y*.038+round)*38;
     for (let ix=0;ix<NX;ix++) {
-      const x=ix*STEP+2,y=iy*STEP+2,i=iy*NX+ix;
+      const x=ix*STEP+2,i=iy*NX+ix;
       const depth=Math.min(x,W-x);
       const grain=noise(Math.min(ix,NX-1-ix),iy);
-      const seam=Math.sin(y*.028+round)*23+Math.sin(y*.081)*12;
       const pocket=depth>142 && depth<W/2-CORE &&
         Math.sin(depth*.025+y*.013+round)*Math.cos(y*.044-depth*.009)>.82;
       const base=depth<104 && y>210 && y<283 ||
@@ -74,17 +77,17 @@ function makeTerrain() {
       const liftPlatform=Math.abs(depth-55)<34 && y>=284 && y<296;
       const crystal=Math.sin(depth*.065+y*.063+round)*Math.sin(depth*.027-y*.075)>.60;
       const core=inCore(x);
-      const fort=depth>=143 && depth<215+Math.sin(y*.045)*10 && !pocket;
+      const fort=depth>=143 && depth<fortDepth && !pocket;
       rock[i]=core ? BEDROCK : fort ? FORTIFICATION : ORDINARY;
       terrain[i]=edge || liftPlatform ? Infinity : base || pocket ? 0 :
-        core ? (460+grain*54+Math.cos(y*.038+round)*38)*crewFactor :
+        core ? (460+grain*54+coreVariation)*crewFactor :
         fort ? 133+grain*22 :
         depth>250+seam && grain>.39 ? 12 : 8;
       if (!edge && !liftPlatform && !core && !fort && !base && !pocket && crystal) ore[i]=1;
       paintCell(ix,iy);
     }
   }
-  dirty=true;
+  dirty=tunnelChanged=true;
 }
 
 function paintCell(ix,iy) {
@@ -135,6 +138,7 @@ function carve(x,y,r,strength,side,drillLevel=0) {
       dirty=true;
     }
   }
+  if (dug) tunnelChanged=true;
   if (dug && teams) {
     teams[side].ore+=dug*.024+enriched*.205;
     if (dug>5) burst(x,y,enriched>3 ? '#ffce7d' : '#ad7685',3);
@@ -142,19 +146,11 @@ function carve(x,y,r,strength,side,drillLevel=0) {
   return worked;
 }
 
+const bedrockSounds={dig:[135,68,.07],shot:[235,62,.13],buy:[433,855,.15],alarm:[180,520,.45],win:[440,905,.65]};
+
 function sound(name) {
-  if (!audio || audio.state!=='running') return;
-  const values={dig:[135,68,.07],shot:[235,62,.13],buy:[433,855,.15],alarm:[180,520,.45],win:[440,905,.65]};
-  const [start,end,length]=values[name];
-  const oscillator=audio.createOscillator(), gain=audio.createGain(), now=audio.currentTime;
-  oscillator.type=name==='shot' ? 'triangle' : 'sine';
-  oscillator.frequency.setValueAtTime(start,now);
-  oscillator.frequency.exponentialRampToValueAtTime(end,now+length);
-  gain.gain.setValueAtTime(.035,now);
-  gain.gain.exponentialRampToValueAtTime(.001,now+length);
-  oscillator.connect(gain).connect(audio.destination);
-  oscillator.start(now);
-  oscillator.stop(now+length);
+  const [start,end,length]=bedrockSounds[name];
+  playGameTone(audio,start,length,name==='shot' ? 'triangle' : 'sine',.035,0,end);
 }
 function enableSound() {
   if (!window.AudioContext) return;
@@ -183,14 +179,7 @@ function input() {
     autoJet:keys.has('ArrowUp'),
     join:keys.has('Enter')
   });
-  let pads = [];
-  try {
-    pads = Array.from(navigator.getGamepads?.() ?? []);
-  } catch {
-    // A player can still join explicitly using the keyboard.
-  }
-  pads.push(...(window.couchJoinstick?.sample() || []));
-  for (const pad of pads) {
+  for (const pad of gameControllerInputs()) {
     if (!pad?.connected || pad.axes.length<2 || pad.buttons.length<4) continue;
     const b=pad.buttons.slice(0,8).map(button=>button.pressed || button.value>.55);
     const [x,y]=pad.axes;
@@ -209,8 +198,9 @@ function overlay() {
     'Mine ore, upgrade your drill, and break through the bedrock.<br>Take out the lift guard and capture the rival lift.';
   ui.roster.replaceChildren();
   function badge(label,side) {
-    const item=document.createElement('span');
-    item.textContent=label; item.style.color=colors[side]; ui.roster.append(item);
+    const item = gameElement('span', {text: label});
+    item.style.color=colors[side];
+    ui.roster.append(item);
   }
   roster.forEach(p=>badge((window.couchJoinstick?.profile?.(p.index)?.name || 'P'+p.number)+' · '+names[p.side]+(p.id===host ? ' · HOST' : ''),p.side));
   const size=teamSize();
@@ -698,7 +688,10 @@ function step(current,dt,prior=previous) {
   time+=dt;
   if (breachAt===null && time>=previousScan+.7) {
     previousScan=time;
-    relay=tunnelsConnect(0) || tunnelsConnect(1);
+    if (tunnelChanged) {
+      relay=tunnelsConnect(0) || tunnelsConnect(1);
+      tunnelChanged=false;
+    }
     if (!relay) {
       const crossed=players.find(p=>p.hp>0 && (p.x-W/2)*sideDir(p.side)>=CORE+8);
       if (crossed) {

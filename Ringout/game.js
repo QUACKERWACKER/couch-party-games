@@ -33,7 +33,7 @@ const dodgeDuration = .20;
 const parryDuration = .095;
 const dodgeCooldown = 1.65;
 const modeButtons = () => [...get('modeChoices').children];
-const connectedPads = new Map();
+let connectedPads = new Map();
 const warningTime = 3;
 const arenas = [
   {name:'Steel', color:'#222c39', grip:1, drag:4.6, speed:1, dash:1, effect:'Standard traction'},
@@ -317,8 +317,7 @@ function scoreboard() {
   const scroll = strip.scrollLeft;
   strip.classList.toggle('compact', humanCount >= 5);
   strip.replaceChildren(...Array.from({length:humanCount}, (_, i) => {
-    const entry = document.createElement('span');
-    entry.className = 'score-entry';
+    const entry = gameElement('span', {className: 'score-entry'});
     entry.style.setProperty('--player-color', palette[lookFor(i).color]);
     entry.dataset.player = i;
     if (!endless) entry.tabIndex = 0;
@@ -332,22 +331,14 @@ function scoreboard() {
       badge.className = 'score-avatar';
       badge.setAttribute('aria-hidden', 'true');
       drawCharacter(badge.getContext('2d'), lookFor(i), 0, 0, 64);
-      const name = document.createElement('strong');
-      name.textContent = 'Player ' + (i + 1);
-      const detail = document.createElement('small');
-      detail.textContent = rules.teams ? 'Team ' + teamNames[i % 2] : deviceLabel(slots[i]);
-      const identity = document.createElement('span');
-      identity.className = 'score-identity';
-      identity.append(name, detail);
+      const identity = gameElement('span', {className: 'score-identity'});
+      identity.append(gameElement('strong', {text: 'Player ' + (i + 1)}),
+        gameElement('small', {text: rules.teams ? 'Team ' + teamNames[i % 2] : deviceLabel(slots[i])}));
       entry.append(badge, identity);
       if (metric) {
-        const number = document.createElement('strong');
-        number.className = 'objective-score';
-        number.textContent = value;
-        entry.append(number);
+        entry.append(gameElement('strong', {className: 'objective-score', text: value}));
       } else if (!endless) {
-        const progress = document.createElement('span');
-        progress.className = 'score-progress';
+        const progress = gameElement('span', {className: 'score-progress'});
         progress.setAttribute('aria-label', wins + ' of ' + winsNeeded() + ' wins');
         for (let point = 0; point < winsNeeded(); point++) {
           const pip = document.createElement('i');
@@ -371,6 +362,12 @@ function prepareArena() {
     upcomingWalls = buildArenaWalls(upcomingMap,humanCount);
   }
 }
+function resetRoundCards(keepPlayers = false) {
+  resetCardWorld(keepPlayers);
+  comboProps = [];
+  echoes = [];
+}
+
 function draftSettings() {
   return {...rules,walls:rules.walls && Boolean((upcomingWalls || obstacles).length)};
 }
@@ -397,9 +394,7 @@ function begin() {
   peelTimer = 3 + Math.random() * 3;
   get('respawn').textContent = '';
   effects = [];
-  echoes = [];
-  comboProps = [];
-  resetCardWorld();
+  resetRoundCards();
   roundPending = false;
   ghostImpactUntil = 0;
   timer = rules.kinetic ? 1.18 : 2.35;
@@ -532,24 +527,18 @@ function renderModeSettings() {
        ['Abilities',['superDash','dodge']]]
     : [['Match settings',fields]];
   panel.replaceChildren(...groups.map(([heading,keys]) => {
-    const section = document.createElement('section');
-    section.className = 'settings-group';
-    const title = document.createElement('h2');
-    title.textContent = heading;
+    const section = gameElement('section', {className: 'settings-group'});
+    const title = gameElement('h2', {text: heading});
     section.append(title);
     for (const key of keys) {
       const [label,values,names] = settingChoices[key];
-      const row = document.createElement('fieldset');
-      row.className = 'settings-row';
-      const legend = document.createElement('legend');
-      legend.textContent = label;
+      const row = gameElement('fieldset', {className: 'settings-row'});
+      const legend = gameElement('legend', {text: label});
       row.append(legend);
-      const optionsRow = document.createElement('div');
-      optionsRow.className = 'settings-options';
+      const optionsRow = gameElement('div', {className: 'settings-options'});
       const pair = values.length === 2 && typeof values[0] === 'boolean';
       const buttons = values.map((value,index) => {
-        const button = document.createElement('button');
-        button.type = 'button';
+        const button = gameElement('button');
         button.dataset.setting = key;
         if (key === 'chapter' && value > storyProgress()+1) {
           button.disabled = true;
@@ -635,12 +624,9 @@ function nextDraft() {
   const spotlight = get('draftSpotlight');
   const look = lookFor(player);
   spotlight.style.setProperty('--fighter-color',palette[look.color]);
-  const entrance = document.createElement('div');
-  entrance.className = 'draft-fighter';
-  const body = document.createElement('i');
-  body.className = 'draft-body';
-  const accessory = document.createElement('i');
-  accessory.className = 'draft-accessory';
+  const entrance = gameElement('div', {className: 'draft-fighter'});
+  const body = gameElement('i', {className: 'draft-body'});
+  const accessory = gameElement('i', {className: 'draft-accessory'});
   placeSprite(body,look.shape,look.color);
   placeSprite(accessory,look.accessory,10);
   entrance.append(body,accessory);
@@ -655,10 +641,8 @@ function nextDraft() {
     }
     button.className = 'card ' + rarity.toLowerCase();
     button.style.setProperty('--deal-delay',Math.min(i,5)*38+'ms');
-    const tier = document.createElement('small');
-    tier.textContent = rarity + (isRadicalCard(choices[i]) ? ' · Radical' : '');
-    const title = document.createElement('strong');
-    title.textContent = name;
+    const tier = gameElement('small', {text: rarity + (isRadicalCard(choices[i]) ? ' · Radical' : '')});
+    const title = gameElement('strong', {text: name});
     const detail = document.createElement('span');
     const effects = Object.entries(stats).filter(([, value]) => value !== 1);
     let effectIndex = 0;
@@ -676,9 +660,7 @@ function nextDraft() {
     button.append(tier, title, makeCardPreview(stats), detail);
     const synergy = rules.divergence ? buildHint(choices[i],owned) : synergyNote(choices[i],owned);
     if (synergy) {
-      const note = document.createElement('span');
-      note.className = 'card-synergy';
-      note.textContent = rules.divergence ? owned[0][0]+' · '+synergy : 'Combos with '+synergy;
+      const note = gameElement('span', {className: 'card-synergy', text: rules.divergence ? owned[0][0]+' · '+synergy : 'Combos with '+synergy});
       button.append(note);
     }
     return button;
@@ -779,15 +761,12 @@ function renderLookMenu(slot, reveal = false) {
   const grid = row.querySelector('.look-grid');
   grid.setAttribute('aria-label', field.label + ' choices');
   const tiles = field.choices.map((label, index) => {
-    const tile = document.createElement('button');
-    tile.type = 'button';
-    tile.className = 'look-tile';
+    const tile = gameElement('button', {className: 'look-tile'});
     tile.setAttribute('aria-pressed', look[field.key] === index);
     tile.setAttribute('aria-label', label);
     tile.disabled = locked;
     tile.classList.toggle('browsing', slot >= 0 && cursor.tabCursor === undefined && cursor.option === index && !locked);
-    const icon = document.createElement('span');
-    icon.className = field.key === 'color' ? 'look-swatch' : 'look-icon';
+    const icon = gameElement('span', {className: field.key === 'color' ? 'look-swatch' : 'look-icon'});
     if (field.key === 'color') icon.style.backgroundColor = palette[index];
     else if (field.key === 'emote') icon.textContent = emotes[index][1];
     else if (field.key === 'accessory' && !index) icon.textContent = '—';
@@ -795,9 +774,7 @@ function renderLookMenu(slot, reveal = false) {
       icon.classList.add('sprite-icon');
       placeSprite(icon, index, field.key === 'shape' ? look.color : 10);
     }
-    const text = document.createElement('small');
-    text.textContent = label;
-    tile.append(icon,text);
+    tile.append(icon,gameElement('small', {text: label}));
     tile.addEventListener('click', () => {
       cursor.option = index;
       selectLook(slot, field.key, index);
@@ -895,7 +872,6 @@ function toggleReady(slot) {
 get('customize').addEventListener('click', () => setSetup(true));
 
 function updateLobby() {
-
   if (state === 'menu') {
     humanCount = slots.length;
     score = Array(humanCount).fill(0);
@@ -903,9 +879,7 @@ function updateLobby() {
     scoreboard();
   }
   get('roster').replaceChildren(...slots.map((slot, i) => {
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.textContent = 'P' + (i + 1) + ' · ' + deviceLabel(slot) + ' ×';
+    const remove = gameElement('button', {text: 'P' + (i + 1) + ' · ' + deviceLabel(slot) + ' ×'});
     remove.setAttribute('aria-label', 'Remove player ' + (i + 1) + ', ' + deviceLabel(slot));
     remove.addEventListener('click', () => {
       if (!isLobby()) return;
@@ -916,41 +890,26 @@ function updateLobby() {
       if (setup) get('lobby').focus();
     });
     if (!setup) return remove;
-    const row = document.createElement('div');
-    row.className = 'look-row';
+    const row = gameElement('div', {className: 'look-row'});
     row.setAttribute('aria-label', 'Customize player ' + (i + 1));
-    const heading = document.createElement('strong');
-    heading.textContent = 'Player ' + (i + 1) + ' · ' + deviceLabel(slot);
-    const preview = document.createElement('div');
-    preview.className = 'setup-preview';
-    const avatar = document.createElement('div');
-    avatar.className = 'setup-avatar';
-    const accessory = document.createElement('span');
-    accessory.className = 'setup-accessory';
-    const emote = document.createElement('canvas');
-    emote.className = 'setup-emote';
+    const heading = gameElement('strong', {text: 'Player ' + (i + 1) + ' · ' + deviceLabel(slot)});
+    const preview = gameElement('div', {className: 'setup-preview'});
+    const emote = gameElement('canvas', {className: 'setup-emote'});
     emote.width = emote.height = 146;
     emote.setAttribute('aria-hidden','true');
-    preview.append(avatar,accessory,emote);
-    const tabs = document.createElement('div');
-    tabs.className = 'look-tabs';
+    preview.append(gameElement('div', {className: 'setup-avatar'}),
+      gameElement('span', {className: 'setup-accessory'}),emote);
+    const tabs = gameElement('div', {className: 'look-tabs'});
     customFields.forEach((field, index) => {
-      const tab = document.createElement('button');
-      tab.type = 'button';
-      tab.className = 'look-tab';
-      tab.textContent = field.label;
+      const tab = gameElement('button', {className: 'look-tab', text: field.label});
       tab.addEventListener('click', () => openLookTab(slot,index));
       tabs.append(tab);
     });
-    const grid = document.createElement('div');
-    grid.className = 'look-grid';
-    const ready = document.createElement('button');
-    ready.type = 'button';
-    ready.className = 'setup-ready';
+    const grid = gameElement('div', {className: 'look-grid'});
+    const ready = gameElement('button', {className: 'setup-ready'});
     ready.addEventListener('click', () => toggleReady(slot));
     remove.textContent = 'Leave';
-    const actions = document.createElement('div');
-    actions.className = 'look-actions';
+    const actions = gameElement('div', {className: 'look-actions'});
     actions.append(remove,ready);
     row.append(heading, preview, tabs, grid, actions);
     if (!customCursors.has(slot)) customCursors.set(slot, {tab:0,option:lookFor(i).color});
@@ -1064,22 +1023,14 @@ window.addEventListener('blur', () => {
 });
 
 function gamepads() {
-  let pads = [];
-  try {
-    pads = Array.from(navigator.getGamepads?.() || []).filter(pad => pad?.connected);
-  } catch {
-    // The keyboard remains available if the browser blocks gamepad access.
-  }
-  pads.push(...(window.couchJoinstick?.sample() || []));
-  const byIndex = new Map(pads.map(pad => [pad.index, pad]));
-  connectedPads.clear();
-  for (const pad of pads) connectedPads.set(pad.index, pad);
+  const pads = gameControllerInputs();
+  connectedPads = new Map(pads.map(pad => [pad.index, pad]));
   for (const index of joinMotion) {
-    if (!byIndex.has(index)) joinMotion.delete(index);
+    if (!connectedPads.has(index)) joinMotion.delete(index);
   }
-  for (const slot of previous.keys()) if (slot >= 0 && !byIndex.has(slot)) previous.delete(slot);
+  for (const slot of previous.keys()) if (slot >= 0 && !connectedPads.has(slot)) previous.delete(slot);
   if (state === 'menu') {
-    const available = slots.filter(slot => slot < 0 || byIndex.has(slot) || window.couchJoinstick?.reserved(slot));
+    const available = slots.filter(slot => slot < 0 || connectedPads.has(slot) || window.couchJoinstick?.reserved(slot));
     if (available.length !== slots.length) {
       for (const slot of slots) {
         if (available.includes(slot)) continue;
@@ -1101,7 +1052,7 @@ function gamepads() {
     if (active) joinMotion.add(pad.index);
     else joinMotion.delete(pad.index);
   }
-  return slots.map(slot => byIndex.get(slot));
+  return slots.map(slot => connectedPads.get(slot));
 }
 
 function readInput(i, pad) {
@@ -1910,9 +1861,7 @@ function advanceWave() {
     arenaTime = 5;
   }
   resetPlayers(true,obstacles);
-  echoes = [];
-  comboProps = [];
-  resetCardWorld();
+  resetRoundCards();
   effects = [];
   peel = null;
   peelTimer = 3 + Math.random() * 3;
@@ -1938,9 +1887,7 @@ function updateEndless(dt) {
     }
     if (rules.cards && wave % rules.draftEvery === 0) {
       upcomingMap = rules.story ? storyMap(wave+1) || currentMap : currentMap;
-      resetCardWorld(true);
-      comboProps = [];
-      echoes = [];
+      resetRoundCards(true);
       draftQueue = Array.from({length:humanCount}, (_, i) => i);
       nextDraft();
       return;
@@ -1952,9 +1899,7 @@ function updateEndless(dt) {
     if (waveBreak <= 0) {
       wave++;
       humans.forEach(p => { p.saved = false; });
-      resetCardWorld(true);
-      comboProps = [];
-      echoes = [];
+      resetRoundCards(true);
       startWave();
     }
   }
@@ -1979,7 +1924,7 @@ function updateEndless(dt) {
   });
   if (waveBreak !== null) waiting.unshift('Wave cleared · Next in ' + Math.ceil(waveBreak) + 's');
   const label = waiting.join('   ');
-  if (get('respawn').textContent !== label) get('respawn').textContent = label;
+  updateGameText(get('respawn'), label);
 }
 
 function boostMovement(player, amount, duration) {
@@ -2598,45 +2543,26 @@ function assignAwards(order) {
 function resultCard(i, rank, award) {
   const stats = matchStats[i];
   const accuracy = stats.attempts ? Math.round(100 * stats.landed / stats.attempts) + '%' : '—';
-  const card = document.createElement('article');
-  card.className = 'result-card';
+  const card = gameElement('article', {className: 'result-card'});
   if (rank) card.dataset.rank = rank;
   card.style.setProperty('--player-color', players[i].color);
-  const stage = document.createElement('div');
-  stage.className = 'podium-stage';
+  const stage = gameElement('div', {className: 'podium-stage'});
   const figure = document.createElement('canvas');
   figure.width = figure.height = 96;
   figure.setAttribute('aria-hidden', 'true');
   drawCharacter(figure.getContext('2d'), players[i].look, 0, 0, 96);
-  stage.append(figure);
-  const step = document.createElement('span');
-  step.className = 'podium-step';
-  step.textContent = rank ? '#' + rank : 'CO-OP';
-  stage.append(step);
-  const name = document.createElement('strong');
-  name.textContent = 'Player ' + (i + 1);
-  const title = document.createElement('span');
-  title.className = 'result-nickname';
-  title.textContent = award.name;
-  const reason = document.createElement('p');
-  reason.className = 'result-reason';
-  reason.textContent = award.line;
+  stage.append(figure, gameElement('span', {className: 'podium-step', text: rank ? '#' + rank : 'CO-OP'}));
   const numbers = document.createElement('dl');
   const values = [...(endless ? [] : [[rules.teams ? 'Team wins' : objective && ['hill','crown'].includes(rules.objective) ? 'Seconds held' : rules.objective === 'stocks' ? 'Lives left' : 'Round wins', rules.teams ? teamScore[i%2] : Math.floor(score[i])]]), ['Push hits', stats.pushes],
     ['Push accuracy', accuracy], ['Dash hits', stats.dashes], ['Falls', stats.falls], ['Emotes', stats.emotes || 0]];
   for (const [label, value] of values) {
-    const term = document.createElement('dt');
-    term.textContent = label;
-    const detail = document.createElement('dd');
-    detail.textContent = value;
-    numbers.append(term, detail);
+    numbers.append(gameElement('dt', {text: label}), gameElement('dd', {text: value}));
   }
-  card.append(stage, name, title, reason, numbers);
+  card.append(stage, gameElement('strong', {text: 'Player ' + (i + 1)}),
+    gameElement('span', {className: 'result-nickname', text: award.name}),
+    gameElement('p', {className: 'result-reason', text: award.line}), numbers);
   if ((roundsMode || endless || rules.preDraft) && builds[i]?.length) {
-    const cards = document.createElement('small');
-    cards.className = 'result-upgrades';
-    cards.textContent = builds[i].map(item => item[0]).join(' · ');
-    card.append(cards);
+    card.append(gameElement('small', {className: 'result-upgrades', text: builds[i].map(item => item[0]).join(' · ')}));
   }
   return card;
 }
@@ -2669,9 +2595,7 @@ function saveCoopRecord() {
 }
 
 function finishTeamRound(team) {
-  resetCardWorld();
-  comboProps = [];
-  echoes = [];
+  resetRoundCards();
   if (team === undefined) {
     finishRound(-1);
     return;
@@ -2695,9 +2619,7 @@ function showResults(winner, chapterCleared = false) {
     try { document.cookie = 'ringout_story_v1='+progress+'; Max-Age=31536000; Path=/; SameSite=Strict'; }
     catch {}
   }
-  resetCardWorld();
-  comboProps = [];
-  echoes = [];
+  resetRoundCards();
   show('match', rules.story ? storyChapter().title : endless ? 'CO-OP RUN COMPLETE' : 'VERSUS MATCH COMPLETE',
     rules.story ? chapterCleared ? 'Chapter cleared' : 'Chapter failed' : endless ? knockouts + ' CPU KOs' : rules.teams ? teamNames[winner] + ' wins' : 'PLAYER ' + (winner + 1) + ' WINS',
     (rules.story ? chapterCleared ? storyChapter().ending : 'Encounter ' + wave + ' of 3 · ' + knockouts + ' KOs' : endless ? 'Wave ' + wave + ' · Best for these rules: wave ' + record.wave + ', ' + record.knockouts + ' KOs' : rules.teams ? teamScore.join(' – ') : objective ? extraModes[rules.objective].name : rounds + ' scored rounds') + ' · ' + duration + ' played',
@@ -2708,8 +2630,7 @@ function showResults(winner, chapterCleared = false) {
   const display = !endless && !rules.teams && order.length >= 3
     ? [order[1], order[0], order[2], ...order.slice(3)] : order;
   const honors = assignAwards(order);
-  const podium = document.createElement('div');
-  podium.className = 'results-podium';
+  const podium = gameElement('div', {className: 'results-podium'});
   for (const i of display) {
     const rank = endless ? null : rules.teams ? (i%2===winner ? 1 : 2) : 1 + order.filter(other => score[other] > score[i]).length;
     podium.append(resultCard(i, rank, honors.get(i)));
@@ -2723,9 +2644,7 @@ get('pauseMenu').addEventListener('click', () => {
   builds = [];
   kineticReset();
   buildEnd();
-  resetCardWorld();
-  comboProps = [];
-  echoes = [];
+  resetRoundCards();
   peel = null;
   effects = [];
   arena = nextArena = 0;
@@ -2748,7 +2667,7 @@ function updateResultsLock() {
   get('resultsLobby').disabled = remaining > 0;
   const label = remaining ? 'Continue in ' + remaining + 's'
     : 'Stick / D-pad to browse · A / × to select';
-  if (get('shortcut').textContent !== label) get('shortcut').textContent = label;
+  updateGameText(get('shortcut'), label);
 }
 
 get('resultsLobby').addEventListener('click', () => {
@@ -2758,9 +2677,7 @@ get('resultsLobby').addEventListener('click', () => {
 function finishRound(winner, tiebreak = false) {
   roundPending = false;
   ghostImpactUntil = 0;
-  resetCardWorld();
-  comboProps = [];
-  echoes = [];
+  resetRoundCards();
   buildEnd();
   if (winner === -1) {
     if(rules.kinetic) kineticReset();
@@ -2930,13 +2847,24 @@ function shockActive(time) {
   return Math.sin(time*2.4) > .68;
 }
 
-function draw() {
-  ctx.fillStyle = '#10151e';
-  ctx.fillRect(0, 0, 1000, 480);
-  ctx.fillStyle = '#313a4a';
+const arenaBackdrop = document.createElement('canvas');
+arenaBackdrop.width = 1000;
+arenaBackdrop.height = 480;
+
+function paintArenaBackdrop() {
+  const backdrop = arenaBackdrop.getContext('2d');
+  backdrop.fillStyle = '#10151e';
+  backdrop.fillRect(0, 0, 1000, 480);
+  backdrop.fillStyle = '#313a4a';
   for (let x = 20; x < 1000; x += 24) {
-    for (let y = 20; y < 480; y += 24) ctx.fillRect(x, y, 1.5, 1.5);
+    for (let y = 20; y < 480; y += 24) backdrop.fillRect(x, y, 1.5, 1.5);
   }
+}
+
+paintArenaBackdrop();
+
+function draw() {
+  ctx.drawImage(arenaBackdrop, 0, 0);
   const {center, zoom, bounds, width: mapWidth} = currentMap;
   ctx.save();
   ctx.translate(500+(rules.kinetic && !reduceCountdownMotion?.matches ? Math.sin(matchTime*112)*kineticShake : 0),240);
@@ -3383,8 +3311,10 @@ function frame(now) {
     const player = draftQueue[0];
     const slot = slots[player];
     if (slot >= 0 && !connectedPads.has(slot)) {
-      get('subtitle').textContent = 'Reconnect Player ' + (player+1) + '’s controller. An automatic pick follows in a moment.';
-      draftDisconnectedAt ??= now;
+      if (draftDisconnectedAt === null) {
+        draftDisconnectedAt = now;
+        get('subtitle').textContent = 'Reconnect Player ' + (player+1) + '’s controller. An automatic pick follows in a moment.';
+      }
       if (now-draftDisconnectedAt >= 4500) pickCard(selected,slot);
     } else if (slot >= 0) {
       if (draftDisconnectedAt !== null) {

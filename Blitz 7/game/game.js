@@ -129,18 +129,7 @@ window.addEventListener('gamepaddisconnected', ({gamepad}) => {
 });
 
 function sound(frequency, duration = .13, type = 'square', delay = 0) {
-  if (!audio || audio.state !== 'running') return;
-  const at = audio.currentTime+delay;
-  const oscillator = audio.createOscillator();
-  const volume = audio.createGain();
-  oscillator.type = type;
-  oscillator.frequency.value = frequency;
-  volume.gain.setValueAtTime(.035, at);
-  volume.gain.exponentialRampToValueAtTime(.001,at+duration);
-  oscillator.connect(volume);
-  volume.connect(audio.destination);
-  oscillator.start(at);
-  oscillator.stop(at+duration);
+  playGameTone(audio, frequency, duration, type, .035, delay);
 }
 
 function readInputs() {
@@ -153,10 +142,9 @@ function readInputs() {
     buttons:pressed, edge:pressed.map((value,i)=>value&&!previousKeys[i])
   });
   previousKeys = pressed;
-  let pads, physicalReadable=true;
-  try { pads = Array.from(navigator.getGamepads?.() || []).filter(pad=>pad?.connected); }
-  catch {pads=[];physicalReadable=false;}
   if (document.hidden) return;
+  const physical = physicalGamepads();
+  const pads = physical ?? [];
   pads.push(...(window.blitzPhones?.sample() || []));
   pads.push(...(window.couchJoinstick?.sample() || []));
   const connected=new Set(pads.map(pad=>pad.index));
@@ -164,7 +152,7 @@ function readInputs() {
   let changed=false;
   // Safari can temporarily omit a pad while the window gains focus.
   for (const index of new Set([...controllers.keys(),...joinHeld])) {
-    if (!physicalReadable && index<1000) continue;
+    if (!physical && index<1000) continue;
     const entry=controllers.get(index);
     if (connected.has(index)) {
       missingPads.delete(index);
@@ -587,26 +575,15 @@ function logPlayStats(reason,at,scored,tackler) {
 function showPostgame() {
   $('final-result').textContent=score[0]===score[1] ? 'Draw' : names[Number(score[1]>score[0])]+' win';
   $('final-score').textContent=names[0]+' '+score[0]+'  –  '+score[1]+' '+names[1];
-  const body=$('stats-body');
-  body.replaceChildren();
   const rows=[...matchStats.values()].sort((a,b)=>a.side-b.side || Number(a.cpu)-Number(b.cpu) ||
     a.label.localeCompare(b.label,undefined,{numeric:true}));
-  for (const row of rows) {
+  $('stats-body').replaceChildren(...rows.map(row=>{
     const tr=document.createElement('tr');
-    const name=document.createElement('th');
-    name.scope='row';
-    name.textContent=row.label+' · '+names[row.side];
-    name.className=row.side===0 ? 'coral' : 'blue';
-    tr.append(name);
-    const values=[row.rush,row.completions+'/'+row.attempts,row.passing,row.catches+' / '+row.receiving,
-      row.touchdowns,row.points,row.tackles,row.sacks,row.picks];
-    for (const value of values) {
-      const cell=document.createElement('td');
-      cell.textContent=String(value);
-      tr.append(cell);
-    }
-    body.append(tr);
-  }
+    tr.append(...gameTableCells([row.label+' · '+names[row.side],row.rush,
+      row.completions+'/'+row.attempts,row.passing,row.catches+' / '+row.receiving,
+      row.touchdowns,row.points,row.tackles,row.sacks,row.picks],row.side===0 ? 'coral' : 'blue'));
+    return tr;
+  }));
   canvas.hidden=true;
   $('postgame').hidden=false;
   $('stats-lobby').focus({preventScroll:true});

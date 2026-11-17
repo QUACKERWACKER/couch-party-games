@@ -29,7 +29,7 @@ const sandbox = vm.createContext({
   performance:{now:()=>now}, setClock:value=>{now=value;}, requestAnimationFrame(){},
   Image:class { addEventListener(){} },
 });
-for (const file of ['cards.js','cosmetics.js','maps.js','card-effects.js','build-mode.js','kinetic.js','game.js']) {
+for (const file of ['../game-runtime.js','cards.js','cosmetics.js','maps.js','card-effects.js','build-mode.js','kinetic.js','game.js']) {
   vm.runInContext(readFileSync(join(__dirname,'..',file),'utf8'),sandbox,{filename:file});
 }
 vm.runInContext(readFileSync(join(__dirname,'scenarios.js'),'utf8'),sandbox,{filename:'scenarios.js'});

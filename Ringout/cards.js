@@ -340,22 +340,16 @@ const previewKinds = {
 function makeCardPreview(stats) {
   const keys = Object.keys(stats);
   const effect = keys.find(key => stats[key] === 1) || keys[0];
-  const preview = document.createElement('div');
-  preview.className = 'card-preview';
+  const preview = gameElement('div', {className: 'card-preview'});
   const event = comboRecipes.get(effect)?.event;
   preview.dataset.effect = previewKinds[effect] || ({dash:'dash push',dashHit:'dash charge',
     dodge:'guard reload',parry:'guard push',full:'charge ring',pickup:'move',overcharge:'charge recoil',emote:'move ring',wall:'push ring',dashEnd:'dash ring',takeHit:'guard',tap:'push'})[event] || 'push';
   preview.setAttribute('aria-hidden','true');
-  const actor = document.createElement('i');
-  actor.className = 'demo-actor';
-  const target = document.createElement('i');
-  target.className = 'demo-target';
-  const wave = document.createElement('i');
-  wave.className = 'demo-wave';
-  const meter = document.createElement('i');
-  meter.className = 'demo-meter';
-  const cue = document.createElement('span');
-  cue.className = 'demo-cue';
+  const actor = gameElement('i', {className: 'demo-actor'});
+  const target = gameElement('i', {className: 'demo-target'});
+  const wave = gameElement('i', {className: 'demo-wave'});
+  const meter = gameElement('i', {className: 'demo-meter'});
+  const cue = gameElement('span', {className: 'demo-cue'});
   cue.textContent = ({ice:'❄',wind:'≈',banana:'🍌',reload:'↻',recover:'↥',freeze:'❄'})[
     preview.dataset.effect.split(' ').find(kind => ['ice','wind','banana','reload','recover','freeze'].includes(kind))] || '';
   preview.append(actor,target,wave,meter,cue);

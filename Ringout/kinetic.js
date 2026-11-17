@@ -46,18 +46,11 @@ function kineticReset() {
   kineticImpact=kineticShake=0;
   kineticDraft=null;
 }
+const kineticSounds={charge:[330,510,.10],release:[186,77,.12],hit:[122,50,.15],parry:[480,980,.19],bank:[380,240,.08],out:[220,38,.28]};
+
 function kineticSound(kind,scale=1) {
-  if (!kineticAudio || kineticAudio.state!=='running') return;
-  const osc=kineticAudio.createOscillator(), gain=kineticAudio.createGain();
-  const [a,b,length]=({charge:[330,510,.10],release:[186,77,.12],hit:[122,50,.15],parry:[480,980,.19],bank:[380,240,.08],out:[220,38,.28]})[kind];
-  const time=kineticAudio.currentTime;
-  osc.type=kind==='parry'?'sine':'triangle';
-  osc.frequency.setValueAtTime(a,time);osc.frequency.exponentialRampToValueAtTime(b,time+length);
-  gain.gain.setValueAtTime(.001,time);
-  gain.gain.exponentialRampToValueAtTime(.09*Math.min(1.4,scale),time+.014);
-  gain.gain.exponentialRampToValueAtTime(.001,time+length);
-  osc.connect(gain);gain.connect(kineticAudio.destination);
-  osc.start(time);osc.stop(time+length+.01);
+  const [start,end,length]=kineticSounds[kind];
+  playGameTone(kineticAudio,start,length,kind==='parry'?'sine':'triangle',.09*Math.min(1.4,scale),0,end,.014);
 }
 function unlockKineticAudio() {
   const Type=window.AudioContext || window.webkitAudioContext;
@@ -370,14 +363,12 @@ function renderKineticDraft() {
   get('kineticDraft').replaceChildren(...kineticDraft.picks.flatMap((pick,i)=>{
     if(!pick) return [];
     const panel=document.createElement('section');
-    const heading=document.createElement('strong');
-    heading.textContent='P'+(i+1)+(pick.done?' · READY':'');
+    const heading = gameElement('strong', {text: 'P'+(i+1)+(pick.done?' · READY':'')});
     heading.style.color=palette[lookFor(i).color];
     panel.append(heading);
     const owned=builds[i];
     if(owned.length>0) {
-      const label=document.createElement('small');
-      label.textContent=owned.slice(-3).map(card=>card[0]).join(' · ');
+      const label = gameElement('small', {text: owned.slice(-3).map(card=>card[0]).join(' · ')});
       panel.append(label);
     }
     (pick.done?[pick.offers[pick.selected]]:pick.offers).forEach((card,index)=>{
