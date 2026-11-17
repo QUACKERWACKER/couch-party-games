@@ -30,12 +30,12 @@ const games = {
 };
 const blitzModes = {
   lobby: ['Boots', 'Leave', 'Helmet', null, 'Tap Team / CPU to switch sides. P1 can hold it and move the stick up or down to adjust CPUs.'],
-  ready: ['Snap', null, null, 'Kick', 'Pick a play, then tap Snap. You can also use the stick to cycle plays.'],
+  ready: ['Snap', null, null, 'Kick', 'Pick a play, then tap Snap.'],
   offense: ['Pass', 'Sprint', 'Dash', 'Handoff', 'Hold Pass, aim with the stick, and release to throw.'],
   receiver: ['Call for pass', 'Sprint', 'Dash', null, 'Run your route and call for the ball.'],
   runner: [null, 'Sprint', 'Juke', null, 'Use the stick to run. Dash away from defenders.'],
   defense: ['Intercept', 'Grapple', 'Dash', null, 'Tap Intercept as the pass comes down. Hold Grapple facing the runner.'],
-  defenseReady: [null, null, null, null, 'Move the stick up or down to cycle defensive formations.'],
+  defenseReady: [null, null, null, null, 'Choose a defensive lineup.'],
   kickMeter: [null, null, null, 'Kick', 'Tap Kick when the meter reaches the target.'],
   try: ['Go for 2', null, null, 'Kick for 1', 'Choose a kick or a two-point play.'],
   paused: [null, null, null, null, 'Waiting for P1 to resume.'],
@@ -538,9 +538,10 @@ function renderBlitzBook(book) {
   blitzBook = book;
   const selected = book.options[book.selected];
   blitzMenu.hidden = false;
+  blitzMenu.dataset.kind = book.kind;
   $('blitz-call-title').textContent = defense ? 'Defensive lineup' : 'QB play call';
   blitzMenu.querySelector('.blitz-call-detail').textContent = defense ?
-    selected.rushers+' rush · '+(7-selected.rushers)+' in coverage' : 'Routes run left to right';
+    selected.rushers+' rush · '+(7-selected.rushers)+' in coverage' : '';
   blitzMenu.querySelector('.blitz-call-actions').hidden = defense;
   blitzMenu.querySelector('[data-call-action="0"]').textContent = selected.name === 'PUNT' ? 'Punt' : 'Snap';
   [...blitzChoices.children].forEach((button,index) => button.setAttribute('aria-pressed', String(book.selected===index)));
@@ -569,7 +570,7 @@ function updateBlitz(info) {
   renderBlitzBook(book);
   $('player').textContent = info.player + (info.host ? ' ★' : '');
   $('status').textContent = info.team || 'Connected';
-  $('hint').textContent = mode === 'lobby' && !info.host ? 'Switch teams or customize your boots and helmet.' : hint;
+  $('hint').textContent = book ? '' : mode === 'lobby' && !info.host ? 'Switch teams or customize your boots and helmet.' : hint;
 }
 
 function publishRingoutHeartbeat() {

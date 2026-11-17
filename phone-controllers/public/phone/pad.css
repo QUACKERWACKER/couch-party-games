@@ -261,26 +261,42 @@ body[data-game="track"] { --base: #21192b; --panel: #3c2c48; --edge: #786080; --
 #blitz-playbook {
   grid-area: 2 / 1;
   display: grid;
-  align-content: start;
-  gap: 7px;
+  grid-template: "title" auto "preview" auto "choices" minmax(0,1fr) "actions" auto / minmax(0,1fr);
+  gap: 5px;
   max-height: var(--play-height);
-  overflow: auto;
-  overscroll-behavior: contain;
-  padding: 8px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 7px;
   border: 1px solid var(--edge);
   border-radius: 12px;
   background: var(--panel);
 }
-#blitz-call-title { margin: 0; font-size: 1rem; color: var(--accent); }
+#blitz-call-title { grid-area: title; margin: 0; font-size: .92rem; color: var(--accent); }
+.blitz-preview { grid-area: preview; justify-self: center; width: min(100%, 240px); min-width: 0; }
 .blitz-preview canvas { display: block; width: 100%; height: auto; border-radius: 6px; }
-.blitz-call-detail { color: var(--muted); font-size: .74rem; margin-top: 3px; }
-.blitz-choices, .blitz-call-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 5px; }
-.blitz-choices button { min-height: 44px; font-size: .76rem; text-wrap: balance; }
+.blitz-call-detail { color: var(--muted); font-size: .7rem; margin-top: 2px; }
+.blitz-call-detail:empty { display: none; }
+.blitz-choices {
+  grid-area: choices;
+  display: grid;
+  align-content: start;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 4px;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 2px;
+}
+#blitz-playbook[data-kind="defense"] .blitz-choices { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.blitz-choices button { min-height: 44px; padding: 3px 4px; font-size: .68rem; line-height: 1.1; text-wrap: balance; }
+.blitz-call-actions { grid-area: actions; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 4px; }
 .blitz-choices button[aria-pressed="true"], [data-call-action="0"] { background: var(--accent); color: var(--base); border-color: var(--accent); }
 @media (orientation: landscape) {
-  #blitz-playbook { grid-template-columns: minmax(0,1.1fr) minmax(0,1fr); }
-  #blitz-call-title, .blitz-call-actions { grid-column: 1 / -1; }
-  .blitz-choices { align-content: start; }
+  #blitz-playbook {
+    grid-template: "title title" auto "preview choices" minmax(0,1fr) "actions actions" auto
+      / minmax(0,.70fr) minmax(0,1fr);
+  }
+  .blitz-preview { align-self: start; }
 }
 
 body[data-game="hoops"] #controls.hoops-recovery { grid-template-columns: minmax(0, 1fr); }

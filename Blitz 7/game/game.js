@@ -49,7 +49,7 @@ const formations = [
 ];
 const KICKOFF_SWEET_SPOT = .04;
 const GRAPPLE_TIME=1.05, GRAPPLE_COOLDOWN=1.45, CONTACT_TIME=.11;
-const QUARTER_SECONDS=23;
+const QUARTER_SECONDS=34.5;
 const HALF_INTRO=1.25, HALF_CLIP=1.8;
 let firstHalfHighlights=[], halftime=null;
 const REPLAY_TIME=1.65, REF_SEQUENCE=3.6, TOUCHDOWN_REPLAY=1.95, TOUCHDOWN_SHOW=2.35;
@@ -1209,13 +1209,14 @@ function updateFlight(dt) {
     const receiverDistance = Math.min(...offense().map(p=>dist(p,flight)));
     const pickers=defenders.filter(p=>{
       const timed = p.catchWindow>0;
-      const cpuJump = p.owner===null && role(p)>=2 && cpuDifficulty>=4;
       const bonus=hasPrize(p,'sneaky') ? 7 : 0;
       const range=dist(p,flight);
       if (timed && range<=23+bonus) return true;
-      if (cpuJump && range<=16+bonus && range+3<receiverDistance) return true;
-      const passiveReach=p.owner===null ? 7+cpuSkill()*5 : 12;
-      return f===1 && range<=passiveReach+bonus && range+4<receiverDistance;
+      if (p.owner===null) {
+        const reach=18+cpuSkill()*7+bonus;
+        return range<=reach && (range<=9+cpuSkill()*4 || range<receiverDistance);
+      }
+      return f===1 && range<=12+bonus && range+4<receiverDistance;
     }).sort((a,b)=>dist(a,flight)-dist(b,flight));
     if (pickers.length) {
       flight = null;
@@ -1317,10 +1318,17 @@ function prizeSpeed(p) {
   return 1;
 }
 
+function cpuInterceptionPoint(ball) {
+  const lowStart=1-Math.asin(13/passHeight(ball,.5))/Math.PI;
+  const progress=clamp(ball.t/ball.duration+.035,(1+lowStart)/2,1);
+  return {x:ball.fromX+(ball.toX-ball.fromX)*progress,
+    y:clamp(ball.fromY+(ball.toY-ball.fromY)*progress,TOP+6,BOTTOM-6)};
+}
+
 function cpuMove(p) {
   const d = direction(), onOffense = p.team === team;
   let x, y;
-  const point = flight && {x:flight.toX,y:flight.toY};
+  const point = flight && (onOffense ? {x:flight.toX,y:flight.toY} : cpuInterceptionPoint(flight));
   const rushers = playCall.rushers, slot=role(p);
   if (p===carrier && slot===1 && runningPlay(playCall) && elapsed<1.05) {
     ({x,y}=runTarget(playCall));
@@ -1359,7 +1367,7 @@ function cpuMove(p) {
     } else ({x,y}=routeTarget(playCall,slot,elapsed));
   } else if (point && defense().filter(r=>r.owner===null && !r.stun)
     .sort((a,b)=>dist(a,point)-dist(b,point)).slice(0,2).includes(p)) {
-    x=point.x-d*(slot>=2 ? 10 : 0);
+    x=point.x;
     y=point.y;
   } else if (carrier && (returning || carrier!==qb() || passed || d*(carrier.x-line)>0 || slot<rushers)) {
     const range = dist(p,carrier);
