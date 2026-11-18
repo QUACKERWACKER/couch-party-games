@@ -32,18 +32,19 @@
     <div class="lobby">
       <div>
         <h3>Teams</h3>
-        <div class="button-row"><button id="keyboard" aria-pressed="true">Keyboard joined</button><button id="switch">Switch team</button></div>
+        <div class="button-row"><button id="keyboard" aria-pressed="true">Keyboard joined</button><button id="switch">Switch team</button><button id="difficulty">CPU · Arcade</button></div>
         <div id="rosters" class="rosters"></div>
-        <p class="help">A joins · RB switches teams · X opens the event draft · Start continues</p>
+        <p class="help">A joins · RB switches teams · B changes CPU difficulty · X drafts events · Start continues</p>
       </div>
       <div>
         <h3>Event order</h3>
-        <div class="button-row"><button id="quick">Quick 5</button><button id="full">All events</button><button id="clear">Clear</button></div>
+        <div id="cups" class="button-row" aria-label="Meet presets"></div>
         <ol id="program"></ol>
         <p class="help">Pick an athlete for each team or let the team captain decide before the event.</p>
       </div>
     </div>
     <div id="groups" class="groups"></div>
+    <details class="record-book"><summary>Record book <small id="record-count"></small></summary><ul id="records-list"></ul></details>
   </section>
   <section id="draft" class="panel" aria-labelledby="draft-title" hidden>
     <div class="section-head"><h2 id="draft-title">Draft your events</h2><button id="draft-start" class="primary">Start meet</button></div>
@@ -58,24 +59,25 @@
     </div>
     <p id="draft-order" class="draft-order"></p>
     <div class="button-row"><button id="draft-preset">Change preset</button><button id="draft-back">Back to lobby</button></div>
-    <p class="help">B / Y browse · A adds or removes · RB cycles Quick 5, All, and Empty · X goes back · Start confirms</p>
+    <p class="help">B / Y browse · A adds or removes · RB cycles meet presets · X goes back · Start confirms</p>
   </section>
   <section id="desk" class="panel" aria-labelledby="desk-title" hidden>
     <div class="section-head"><h2 id="desk-title"></h2><button id="advance" class="primary"></button></div>
-    <p id="briefing"></p>
+    <p id="briefing"></p><p id="event-record" class="event-record"></p>
     <div id="tutorial" class="tutorial" aria-labelledby="tutorial-title" hidden>
       <div class="section-head"><h3 id="tutorial-title">How to play</h3><strong id="tutorial-goal"></strong></div>
       <ul id="tutorial-controls"></ul>
     </div>
     <div id="assignments" class="rosters"></div>
     <p id="desk-help" class="help"></p>
+    <div id="recap" class="recap" hidden></div>
     <ol id="results" hidden></ol>
-    <button id="reset" hidden>Back to setup</button>
+    <div class="button-row"><button id="rematch" class="primary" hidden>Rematch</button><button id="reset" hidden>Back to setup</button></div>
   </section>
   <section class="controls" aria-label="Controls">
     <div><kbd>J / A</kbd><b>Stride / meter</b></div>
     <div><kbd>K / B</kbd><b>Hold turbo</b></div>
-    <div><kbd>I / Y</kbd><b>Jump / pass / grab</b></div>
+    <div><kbd>I / Y</kbd><b>Event action</b></div>
     <div><kbd>L / X</kbd><b>Dirty trick</b></div>
   </section>
   <div id="touch" class="touch" aria-label="On-screen controls">

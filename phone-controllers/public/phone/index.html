@@ -64,15 +64,25 @@
   </div>
   <dialog id="profile-dialog" aria-labelledby="profile-title">
     <form method="dialog">
-      <h2 id="profile-title">Your player</h2>
+      <h2 id="profile-title">Customize your player</h2>
+      <div class="profile-preview" aria-label="Player preview">
+        <span id="profile-icon-preview"></span>
+        <div><strong id="profile-name-preview"></strong><small>Your badge on the shared screen</small></div>
+      </div>
       <div class="profile-fields">
-        <label>Nickname <input name="nickname" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
+        <label>Nickname · up to 4 letters <input name="nickname" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
         <label>Accent color <select name="color"></select></label>
       </div>
       <fieldset>
-        <legend>Primary avatar</legend>
+        <legend>Profile icon</legend>
+        <p class="profile-help">Choose the badge beside your name in the player list.</p>
         <div id="profile-avatars"></div>
       </fieldset>
+      <section aria-labelledby="accent-preview-title">
+        <h3 id="accent-preview-title">Your accent in each game</h3>
+        <p class="profile-help">Your color highlights the equipment shown below. Team colors still identify your side.</p>
+        <div id="profile-game-previews"></div>
+      </section>
       <div class="profile-actions">
         <button value="cancel">Cancel</button>
         <button value="save">Save player</button>

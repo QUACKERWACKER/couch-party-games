@@ -98,3 +98,15 @@ kbd { background: #41334d; color: var(--lime); padding: 3px 6px; border-radius: 
   .groups, .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .header-tools { flex-wrap: wrap; }
 }
+
+.record-book { margin-top: 12px; }
+.record-book small { font: 600 .85rem system-ui, sans-serif; color: var(--muted); margin-left: 8px; }
+#records-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 7px 20px; }
+#records-list:empty { display: none; }
+.event-record { color: var(--lime); margin-top: 4px; }
+.event-record:empty { display: none; }
+.recap { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 8px; margin: 12px 0; }
+.recap article { background: #221d2e; border: 1px solid var(--line); border-radius: 7px; padding: 12px; border-left: 4px solid currentColor; }
+.recap strong { display: block; font: 800 24px/1.2 var(--display); margin: 4px 0; }
+.recap p { color: var(--muted); font-size: .87rem; }
+#cups button:first-child { color: var(--lime); }

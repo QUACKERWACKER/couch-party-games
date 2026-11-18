@@ -25,7 +25,7 @@
   <section class="arena" aria-label="Game">
     <canvas width="960" height="500" tabindex="-1" aria-label="Top-down basketball court"></canvas>
     <div id="call" class="call" hidden></div>
-    <div id="overlay" class="overlay">
+    <div id="overlay" class="overlay" hidden>
       <div class="ticket">
         <h2 id="title" tabindex="-1">TIP-OFF</h2>
         <p id="intro">3-on-3 · Four 28-second quarters</p>
@@ -59,17 +59,19 @@
           <button id="draft-back" type="button">BACK TO LOBBY</button>
         </section>
         <div id="lobby">
-          <div class="lobby-buttons">
-            <button id="difficulty">CPU · NORMAL</button>
+          <div class="warmup-heading">
+            <div><h2>SHOOTAROUND</h2><small id="warmup-count">0/6 PLAYERS CONNECTED</small></div>
+            <div class="lobby-buttons"><button id="difficulty">CPU · NORMAL</button><button id="warmup-start" class="primary">DRAFT &amp; TIP OFF</button></div>
           </div>
-          <p id="roster"></p>
-          <small>On the Couch Party Games launcher, open Phone controllers and start a room. Scan the QR code and tap Join.</small>
+          <p class="warmup-help">Scan the launcher’s QR code and tap Join. Move and shoot on your phone while friends join. Switch team to choose a basket.</p>
+          <div id="roster" aria-label="Team rosters and practice results"></div>
         </div>
         <button id="start" class="primary">TIP OFF</button>
       </div>
     </div>
   </section>
   <div class="ribbon"><span id="status" role="status">READY FOR TIP-OFF</span><div><button id="skip-show" hidden>SKIP HALFTIME</button> <button id="pause" disabled>PAUSE</button></div></div>
+  <section id="warmup-panel" aria-label="Join and practice"></section>
   <section class="controls" aria-label="Controls">
     <div><b>Move</b><small>Phone stick</small></div>
     <div><b>Shoot / Block</b><small>Hold Shoot and release in green</small></div>
@@ -82,7 +84,8 @@
     <p>Hot Dogs shoot right, Turbo Toads shoot left. Green releases have the best odds, followed by amber and red. The shot meter shows your range tier. Longer shots need a later release, have a smaller green window, and are less likely to go in. Nearby defenders lower the odds. Tap Shoot near the rim to dunk. Defenders in your path or at the rim make dunks less reliable. Made dunks get an instant replay. Shoot from outside the arc for three. On defense, jump near the shooter to block or swipe up close to steal. Chase loose balls for rebounds. The shot clock gives you 12 seconds on a new possession. Release the ball before zero or the other team takes over. Tied games go to a full 28-second overtime. Play another overtime if the score is still tied.</p>
     <p>Swiping from behind can draw a reach-in foul. Contact during a shot can send the shooter to the free-throw line. At the line, tap Free throw when the fast-moving marker hits the narrow green zone. Waiting too long counts as a miss. The halftime show replays first-half highlights. Tap Skip halftime on your phone or use the shared screen.</p>
     <p>The gold bar at your feet shows how much stamina you have left. Time on court wears you down, and Turbo tires you out faster. Hard contact can shake up a tired player. The referee stops both clocks for a replay and resumes play with the same possession. An injured phone player can shorten the five-second slowdown. Memorize the recovery order on the shared screen and repeat it on your phone. Halftime restores some stamina and clears injuries.</p>
-    <p>Before tip-off, the lowest-numbered player on each team drafts CPUs to fill open slots. Teams with no human captain are filled automatically. Shots released before the quarter horn can still score.</p>
+    <p>Everyone gets their own practice ball in the join lobby. Warm-up shots use the match’s timing and open-shot odds.
+    Before tip-off, the lowest-numbered player on each team drafts CPUs to fill open slots. Teams with no human captain are filled automatically. Shots released before the quarter horn can still score.</p>
     <p>Up to three Wi-Fi phone players can join each team. The CPU fills empty spots. Start without phones to watch a CPU exhibition.</p>
   </details>
 </main>

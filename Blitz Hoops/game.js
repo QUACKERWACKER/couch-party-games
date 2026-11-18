@@ -111,11 +111,12 @@ function assignPlayers() {
     human.number = index + 1;
     const slot = team(human.side).find(p => !p.human);
     if (slot) {
+      if (!human.practice || human.practice.avatar.side !== human.side) resetPractice(human, slot);
       slot.human = human;
       slot.phoneSeat = human;
     }
   });
-  $('roster').textContent = humans().map(p => `${p.identity?.name || `P${p.number}`} · ${names[p.side]}${p.online ? '' : ' · OFFLINE'}`).join('  /  ') || 'CPU exhibition';
+  renderPracticeRoster();
 }
 
 function switchSide(human) {
@@ -268,6 +269,7 @@ function resumePlay() {
   mode = 'live';
   $('overlay').hidden = true;
   canvas.focus({preventScroll: true});
+  $('warmup-panel').hidden = true;
   $('pause').disabled = false;
   $('skip-show').hidden = sequence?.kind !== 'halftime';
 }
@@ -276,7 +278,8 @@ function overlay(title, intro, button) {
   $('title').textContent = title;
   $('intro').textContent = intro;
   $('start').textContent = button;
-  $('overlay').hidden = false;
+  $('overlay').hidden = mode === 'lobby';
+  $('warmup-panel').hidden = mode !== 'lobby';
   $('lobby').hidden = mode === 'pause' || mode === 'draft';
   $('draft').hidden = mode !== 'draft';
   $('start').hidden = mode === 'draft';
@@ -335,6 +338,10 @@ function readInputs() {
         player.charge = player.request = 0;
         player.vx = player.vy = 0;
       }
+      if (profile.practice) {
+        profile.practice.avatar.charge = 0;
+        profile.practice.armed = false;
+      }
       profile.last = buttons;
       continue;
     }
@@ -389,7 +396,7 @@ function describePhoneControls() {
   for (const [index, profile] of pads) {
     const player = players.find(p => p.human === profile);
     let phase = 'stoppage';
-    if (inLobby) phase = 'lobby';
+    if (inLobby) phase = mode === 'lobby' ? 'warmup' : 'lobby';
     else if (mode === 'draft') phase = profile === draftCaptain(draft.side) ? 'draft' : 'draftWait';
     else if (mode === 'pause') phase = 'paused';
     else if (sequence?.kind === 'halftime') phase = 'halftime';
@@ -448,6 +455,110 @@ function pass(p, state) {
   tone([330]);
 }
 
+function resetPractice(profile, player) {
+  profile.practice = {
+    avatar: {...player, x: profile.side ? 290 : 670, y: 130 + player.slot * 120,
+      human: profile, charge: 0, jump: 0, vx: 0, vy: 0, energy: 1, fatigue: 0, injury: 0, swipe: 0},
+    attempts: 0, makes: 0, flight: null, cooldown: 0, armed: false, feedback: 'Try a shot'
+  };
+}
+
+function renderPracticeRoster() {
+  const cards = [];
+  for (const which of [0, 1]) {
+    const panel = gameElement('div', {className: which ? 'warmup-team cool-roster' : 'warmup-team hot-roster'});
+    panel.append(gameElement('h3', {text: names[which]}));
+    for (let slot = 0; slot < 3; slot++) {
+      const human = humans().filter(p => p.side === which)[slot];
+      const row = gameElement('div', {className: 'warmup-seat'});
+      if (human) {
+        const practice = human.practice;
+        row.append(gameElement('b', {text: `P${human.number} · ${human.identity?.name || 'Phone player'}`}));
+        row.append(gameElement('small', {text: human.online
+          ? `${practice.makes}/${practice.attempts} made · ${practice.feedback}` : 'Phone offline · reconnect to return'}));
+      } else {
+        row.append(gameElement('b', {text: 'Open spot'}), gameElement('small', {text: 'Tap Join on your phone · CPU fills at tip-off'}));
+      }
+      panel.append(row);
+    }
+    cards.push(panel);
+  }
+  $('roster').replaceChildren(...cards);
+  $('status').textContent = 'WARM-UP · HOLD PRACTICE SHOT, THEN RELEASE · START WHEN READY';
+  $('warmup-count').textContent = `${humans().filter(p => p.online).length}/6 PLAYERS CONNECTED`;
+}
+
+function updatePractice(dt) {
+  for (const profile of humans()) {
+    const warmup = profile.practice;
+    if (!warmup) continue;
+    const p = warmup.avatar;
+    p.human = profile;
+    p.slot = players.find(player => player.human === profile)?.slot ?? p.slot;
+    p.jump = Math.max(0, p.jump - dt);
+    warmup.cooldown = Math.max(0, warmup.cooldown - dt);
+    const state = controls.get(profile) || empty;
+    if (!profile.online) {
+      p.charge = 0;
+      p.vx = p.vy = 0;
+      warmup.armed = false;
+    } else {
+      if (!state.down[0]) warmup.armed = true;
+      const speed = (state.down[1] ? 233 : 170) * (p.charge ? .45 : 1);
+      p.vx = state.x * speed;
+      p.vy = state.y * speed;
+      p.x = clamp(p.x + p.vx * dt, 77, 883);
+      p.y = clamp(p.y + p.vy * dt, 54, 446);
+      if (!warmup.flight && !warmup.cooldown && warmup.armed) {
+        if (state.down[0]) p.charge = Math.min(maxCharge, p.charge + dt);
+        else if (state.release[0] && p.charge) {
+          warmup.flight = shotAttempt(p, false, false);
+          warmup.attempts++;
+          warmup.feedback = warmup.flight.dunk ? 'Dunk attempt' : `${warmup.flight.tier.name} · ${releaseNames[warmup.flight.grade]}`;
+          p.charge = 0;
+          if (warmup.flight.dunk) p.jump = .36;
+          tone([470]);
+          renderPracticeRoster();
+        }
+      }
+    }
+    if (!warmup.flight) continue;
+    warmup.flight.age += dt;
+    if (warmup.flight.age < warmup.flight.duration) continue;
+    if (warmup.flight.made) {
+      warmup.makes++;
+      burst(rim(p.side), colors[p.side]);
+      tone([440, 554, 740]);
+    }
+    warmup.feedback += warmup.flight.made ? ' · MADE' : ' · MISSED';
+    warmup.flight = null;
+    warmup.cooldown = .35;
+    renderPracticeRoster();
+  }
+}
+
+function drawPractice(now) {
+  ctx.drawImage(court, 0, 0);
+  basket.forEach(drawRim);
+  rect(ctx, '#23172edb', 290, 50, 380, 43);
+  lettering(ctx, 'WARM-UP · EVERYONE GETS A BALL', 480, 67, 16, '#fff1d6');
+  lettering(ctx, 'HOT DOGS →     ← TURBO TOADS', 480, 84, 10, '#ffc267');
+  if (!humans().length) {
+    rect(ctx, '#23172eee', 272, 192, 416, 100);
+    lettering(ctx, 'SCAN IN. SHOOT AROUND.', 480, 225, 25, '#ffc267');
+    lettering(ctx, 'PAIR PHONES ON THE COUCH PARTY GAMES LAUNCHER', 480, 264, 12, '#fff1d6');
+  }
+  for (const profile of humans().sort((a, b) => a.practice.avatar.y - b.practice.avatar.y)) {
+    const warmup = profile.practice;
+    const p = warmup.avatar;
+    drawPlayer(p, now, !warmup.flight && !warmup.cooldown && profile.online);
+    if (warmup.flight) drawBall(ballPosition(warmup.flight));
+    else if (!warmup.cooldown && profile.online) drawBall({x: p.x + (p.side ? -13 : 13), y: p.y + 4, z: p.charge ? 17 : 7});
+    if (!profile.online) lettering(ctx, 'OFFLINE', p.x, p.y + 28, 10, '#ffc267');
+  }
+  for (const bit of particles) rect(ctx, bit.color, bit.x, bit.y, 4, 4);
+}
+
 function shotTier(range) {
   return shotTiers.find(tier => range <= tier.maxRange);
 }
@@ -475,32 +586,40 @@ function dunkOdds(shooter, goal) {
   return clamp((rimProtector ? .54 : .73) - (crowd.length - 1) * .11 + (finishing - defense) * .004, .22, .85);
 }
 
+function shotAttempt(p, cpu, contested = true) {
+  const target = rim(p.side);
+  const range = distance(p, target);
+  const dunk = range <= dunkRange;
+  const tier = shotTier(range);
+  const grade = dunk ? 0 : cpu ? cpuReleaseGrade(p) : releaseGrade(p.charge, tier);
+  const pressure = contested ? distance(p, nearest(p, team(1 - p.side))) : Infinity;
+  const chance = dunk ? contested ? dunkOdds(p, target) : .99 : tier.odds[grade] * (pressure < 35 ? .72 : 1);
+  const made = Math.random() < chance;
+  const end = made ? target : {x: target.x + (p.side ? 1 : -1) * (28 + Math.random() * 42),
+    y: clamp(center + (Math.random() - .5) * 190, 65, 435)};
+  return {type: 'shot', p, x: p.x, y: p.y, end, points: isThree(p) ? 3 : 2, dunk, made, grade, tier,
+    age: 0, duration: dunk ? made ? .32 : .52 : clamp(.42 + range / 660, .49, 1.12)};
+}
+
 function shot(p, cpu = false) {
   const target = rim(p.side);
   const range = distance(p, target);
   const points = isThree(p) ? 3 : 2;
   const dunk = range <= dunkRange;
-  const defender = nearest(p, team(1 - p.side));
-  const pressure = distance(p, defender);
   const contact = team(1 - p.side).find(q =>
     distance(p, q) < 25 && (q.swipe > 0 || (q.jump > 0 && isBehind(q, p))));
   if (contact) {
     whistle('SHOOTING FOUL', contact, p, points);
     return;
   }
-  const tier = shotTier(range);
-  const grade = dunk ? 0 : cpu ? cpuReleaseGrade(p) : releaseGrade(p.charge, tier);
-  const chance = dunk ? dunkOdds(p, target) : tier.odds[grade] * (pressure < 35 ? .72 : 1);
-  const made = Math.random() < chance;
-  const end = made ? target : {x: target.x + (p.side ? 1 : -1) * (28 + Math.random() * 42),
-    y: clamp(center + (Math.random() - .5) * 190, 65, 435)};
+  const attempt = shotAttempt(p, cpu);
+  const {grade, tier} = attempt;
   p.stats.shots++;
   if (points === 3) p.stats.threeAttempts++;
   const passer = assist?.receiver === p && possessionAge <= assist.expiresAfter
     ? assist.passer : null;
   assist = null;
-  flight = {type: 'shot', p, passer, x: p.x, y: p.y, end, points, dunk, made, age: 0,
-    duration: dunk ? made ? .32 : .52 : clamp(.42 + range / 660, .49, 1.12)};
+  flight = {...attempt, passer};
   owner = null;
   p.charge = 0;
   if (dunk) p.jump = .36;
@@ -771,6 +890,10 @@ function update(dt) {
     bit.life -= dt;
   }
   while (particles[0]?.life <= 0) particles.shift();
+  if (mode === 'lobby') {
+    updatePractice(dt);
+    return;
+  }
   if (mode !== 'live') return;
   for (const teamIndex of [0, 1]) benchCheer[teamIndex] = Math.max(0, benchCheer[teamIndex] - dt);
   if (sequence) {
@@ -1431,7 +1554,8 @@ function drawRecovery(active, now) {
 
 function draw(now) {
   const active = sequence;
-  if (active?.kind === 'halftime') drawHalftime(active);
+  if (mode === 'lobby') drawPractice(now);
+  else if (active?.kind === 'halftime') drawHalftime(active);
   else if (active?.kind === 'replay') showClip(active.clip, active.age, active.duration, 'INSTANT REPLAY');
   else if (active?.kind === 'period-break') {
     drawScene(now, active.scene);
@@ -1462,19 +1586,20 @@ function draw(now) {
     updateGameText($('score' + i), String(score[i]).padStart(2, '0'));
     updateGameText($('fouls' + i), `${fouls[i]} ${fouls[i] === 1 ? 'FOUL' : 'FOULS'}`);
   }
-  updateGameText($('period'), active?.kind === 'halftime' ? 'HALF' : quarter >= 5 ? `OT${quarter - 4}` : 'Q' + quarter);
-  updateGameText($('clock'), time > 0 && time < 5 ? (Math.ceil(time * 10) / 10).toFixed(1)
+  updateGameText($('period'), mode === 'lobby' ? 'WARM-UP' : active?.kind === 'halftime' ? 'HALF' : quarter >= 5 ? `OT${quarter - 4}` : 'Q' + quarter);
+  updateGameText($('clock'), mode === 'lobby' ? '—' : time > 0 && time < 5 ? (Math.ceil(time * 10) / 10).toFixed(1)
     : '0:' + String(Math.ceil(time)).padStart(2, '0'));
   const clockRunning = mode === 'live' && !active && !inbound && time > 0 && flight?.type !== 'shot' && !loose;
   const expired = active?.kind === 'violation';
   const timerState = expired || (clockRunning && shotClock <= 5) ? 'urgent' : clockRunning ? 'running' : 'stopped';
   const shotTimer = $('shot-timer');
   if (shotTimer.dataset.state !== timerState) shotTimer.dataset.state = timerState;
-  updateGameText($('shot-clock'), expired ? '0.0'
+  updateGameText($('shot-clock'), mode === 'lobby' ? '—' : expired ? '0.0'
     : shotClock <= 5 ? (Math.ceil(shotClock * 10) / 10).toFixed(1) : Math.ceil(shotClock));
 }
 
 $('start').addEventListener('click', menuAction);
+$('warmup-start').addEventListener('click', menuAction);
 $('draft-back').addEventListener('click', cancelDraft);
 $('pause').addEventListener('click', togglePause);
 $('skip-show').addEventListener('click', skipHalftime);
@@ -1491,6 +1616,8 @@ window.addEventListener('blur', () => {
   if (mode === 'live') togglePause();
 });
 
+const warmupPanel = $('warmup-panel');
+warmupPanel.append($('lobby'));
 window.couchJoinstick?.describe(describePhoneControls);
 paintCourt();
 assignPlayers();

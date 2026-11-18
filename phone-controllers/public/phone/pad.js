@@ -46,6 +46,8 @@ const blitzModes = {
 const hoopsModes = {
   join: {labels: {0: 'Join'}, hint: 'Tap Join to claim a player.'},
   lobby: {labels: {2: 'Leave team', 5: 'Switch team', 9: 'Start'}, hint: 'Choose a team, then start the draft or tip off.'},
+  warmup: {labels: {0: 'Practice shot', 1: 'Turbo', 2: 'Leave team', 5: 'Switch team', 9: 'Draft & start'},
+    hint: 'Everyone has a ball. Hold Practice shot and release in green. Tap Draft & start when ready.'},
   full: {labels: {}, hint: 'All six spots are taken.'},
   wait: {labels: {}, hint: 'You can join at the next lobby.'},
   draft: {labels: {0: 'Draft player'}, move: 'Browse players', hint: 'Move the stick to browse. Check ratings on the shared screen.'},
@@ -442,7 +444,14 @@ function emphasizeAction(preferred = 0) {
   }
 }
 
+let lastTrackCue;
+
 function updateTrack(info) {
+  const cue = info?.cue;
+  if (cue?.id && cue.id !== lastTrackCue) {
+    lastTrackCue = cue.id;
+    if (!document.hidden) navigator.vibrate?.(cue.kind === 'flag' ? [40, 35, 50] : 23);
+  }
   const labels = info?.buttons ?? {0: 'Join'};
   updateActionLabels(labels);
   emphasizeAction(info?.primary);
@@ -751,20 +760,21 @@ function updateLobbySelection() {
 }
 
 function installProfileEditor() {
-  const {games, colors, normalize, avatar} = window.couchProfiles;
+  const {games, icons, accents, colors, normalize, avatar} = window.couchProfiles;
   const dialog = $('profile-dialog');
   const form = dialog.querySelector('form');
   const name = form.elements.nickname;
   const color = form.elements.color;
   const previews = $('profile-avatars');
   const art = new Map();
+  const gameArt = new Map();
   const key = 'couch-party-player';
   try {
     const saved = localStorage.getItem(key);
     if (saved) profile = normalize(JSON.parse(saved));
   } catch {}
   for (const [id, [label]] of Object.entries(colors)) color.add(new Option(label, id));
-  for (const [id, [title]] of Object.entries(games)) {
+  for (const [id, [title]] of Object.entries(icons)) {
     const choice = document.createElement('label');
     const radio = document.createElement('input');
     radio.type = 'radio';
@@ -776,13 +786,28 @@ function installProfileEditor() {
     previews.append(choice);
     art.set(id, figure);
   }
-  function refresh() {
-    for (const [id, figure] of art) figure.replaceChildren(avatar(id, color.value));
+  for (const [id, [title]] of Object.entries(games)) {
+    const card = document.createElement('div');
+    const figure = document.createElement('span');
+    const name = document.createElement('strong');
+    const detail = document.createElement('small');
+    name.textContent = title;
+    detail.textContent = accents[id];
+    card.append(figure, name, detail);
+    $('profile-game-previews').append(card);
+    gameArt.set(id, figure);
   }
+  function refresh() {
+    for (const [id, figure] of [...art, ...gameArt]) figure.replaceChildren(avatar(id, color.value));
+    $('profile-icon-preview').replaceChildren(avatar(form.elements.avatar.value, color.value));
+    $('profile-name-preview').textContent = name.value || 'Phone ' + (pad?.slot ?? '');
+  }
+  previews.addEventListener('change', refresh);
   color.addEventListener('input', refresh);
   name.addEventListener('input', () => {
     const normalized = normalize({name: name.value}).name;
     if (name.value !== normalized) name.value = normalized;
+    refresh();
   });
   $('profile-open').onclick = () => {
     const draft = profile ?? window.couchProfiles.defaults;
