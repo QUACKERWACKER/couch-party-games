@@ -26,15 +26,15 @@
     <canvas width="960" height="350" aria-label="Arcade stadium and timing meters"></canvas>
     <div id="call" class="call" aria-hidden="true"></div>
   </section>
-  <div class="ribbon"><span id="status" role="status">Press A on a controller to join, or play on the keyboard.</span><button id="pause" hidden>Pause</button></div>
+  <div class="ribbon"><span id="status" role="status">Pair your phone in the launcher, then tap Join. Up to 16 athletes can join.</span><button id="pause" hidden>Pause</button></div>
   <section id="setup" class="panel" aria-labelledby="setup-title">
     <div class="section-head"><h2 id="setup-title">Build your meet</h2><div class="button-row"><button id="open-draft">Draft events</button><button id="start" class="primary">Start meet</button></div></div>
     <div class="lobby">
       <div>
         <h3>Teams</h3>
-        <div class="button-row"><button id="keyboard" aria-pressed="true">Keyboard joined</button><button id="switch">Switch team</button><button id="difficulty">CPU · Arcade</button></div>
+        <div class="button-row"><button id="difficulty">CPU · Arcade</button></div>
         <div id="rosters" class="rosters"></div>
-        <p class="help">A joins · RB switches teams · B changes CPU difficulty · X drafts events · Start continues</p>
+        <p class="help">Join on your phone · Team picks your side · X opens the event draft · Center button starts the meet</p>
       </div>
       <div>
         <h3>Event order</h3>
@@ -59,7 +59,7 @@
     </div>
     <p id="draft-order" class="draft-order"></p>
     <div class="button-row"><button id="draft-preset">Change preset</button><button id="draft-back">Back to lobby</button></div>
-    <p class="help">B / Y browse · A adds or removes · RB cycles meet presets · X goes back · Start confirms</p>
+    <p class="help">Move the phone stick to browse · A adds or removes · Y cycles meet presets · X goes back · Center confirms</p>
   </section>
   <section id="desk" class="panel" aria-labelledby="desk-title" hidden>
     <div class="section-head"><h2 id="desk-title"></h2><button id="advance" class="primary"></button></div>
@@ -74,16 +74,6 @@
     <ol id="results" hidden></ol>
     <div class="button-row"><button id="rematch" class="primary" hidden>Rematch</button><button id="reset" hidden>Back to setup</button></div>
   </section>
-  <section class="controls" aria-label="Controls">
-    <div><kbd>J / A</kbd><b>Stride / meter</b></div>
-    <div><kbd>K / B</kbd><b>Hold turbo</b></div>
-    <div><kbd>I / Y</kbd><b>Event action</b></div>
-    <div><kbd>L / X</kbd><b>Dirty trick</b></div>
-  </section>
-  <div id="touch" class="touch" aria-label="On-screen controls">
-    <button data-key="j">Stride / meter</button><button data-key="k">Turbo</button>
-    <button data-key="i">Jump / pass</button><button data-key="l">Trick</button>
-  </div>
 </main>
 </body>
 </html>

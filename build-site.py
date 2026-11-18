@@ -63,6 +63,7 @@ def build(output, relay):
         copyfile(source / "pad.css", phone / "pad.css")
         copyfile(source / "profiles.js", phone / "profiles.js")
         copyfile(source / "direct-link.js", phone / "direct-link.js")
+        copyfile(source / "ringout-controller.js", phone / "ringout-controller.js")
         (phone / "pad.js").write_text(f"const couchPhoneRelay = {json.dumps(relay)};\n"
                                       + (source / "pad.js").read_text())
     (output / "joinstick-host.js").write_text(script)

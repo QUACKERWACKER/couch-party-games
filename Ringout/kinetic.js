@@ -352,8 +352,8 @@ function kineticOffers(owned,count,random=Math.random) {
 function startKineticDraft(winner,tiebreak = false) {
   const low=Math.min(...score);
   const picks=builds.map((owned,i)=>i===winner || owned.length>=kineticDeck.length?null:{offers:kineticOffers(owned,score[i]===low?4:3),selected:0,done:false});
-  kineticDraft={picks,lockedUntil:performance.now()+300,deadline:performance.now()+19000,continueAt:0};
-  show('kineticDraft',tiebreak?'CENTER TIEBREAK · P'+(winner+1):'UPGRADE','PICK YOUR POWER','Browse left/right · confirm with Dash · lowest score gets an extra option');
+  kineticDraft={picks,lockedUntil:performance.now()+2200,deadline:performance.now()+21200,continueAt:0};
+  show('kineticDraft',tiebreak?'CENTER TIEBREAK · P'+(winner+1):'UPGRADE','PICK YOUR POWER','Look at your phone and choose one upgrade · lowest score gets an extra option');
   get('kineticDraft').hidden=false;
   renderKineticDraft();
 }
@@ -364,7 +364,7 @@ function renderKineticDraft() {
     if(!pick) return [];
     const panel=document.createElement('section');
     const heading = gameElement('strong', {text: 'P'+(i+1)+(pick.done?' · READY':'')});
-    heading.style.color=palette[lookFor(i).color];
+    heading.style.color=playerAccent(i);
     panel.append(heading);
     const owned=builds[i];
     if(owned.length>0) {
@@ -372,7 +372,7 @@ function renderKineticDraft() {
       panel.append(label);
     }
     (pick.done?[pick.offers[pick.selected]]:pick.offers).forEach((card,index)=>{
-      const button=document.createElement(slots[i]<0?'button':'article');
+      const button=document.createElement('article');
       button.className='kinetic-offer'+(index===pick.selected || pick.done?' chosen':'');
       const synergy=owned.find(previous=>previous!==card && previous[4]?.tags.some(tag=>card[4].tags.includes(tag)));
       const icon=document.createElement('b'),title=document.createElement('strong'),desc=document.createElement('span');
@@ -380,7 +380,7 @@ function renderKineticDraft() {
       desc.textContent=pick.done?'Locked in':card[2];
       button.append(icon,title,desc);
       if(synergy && !pick.done){const note=document.createElement('small');note.textContent='Pairs with '+synergy[0];button.append(note);}
-      if(slots[i]<0 && !pick.done) button.addEventListener('click',()=>kineticPick(i,index));
+
       panel.append(button);
     });
     return [panel];

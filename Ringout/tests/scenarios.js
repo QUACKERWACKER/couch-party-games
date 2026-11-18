@@ -511,8 +511,10 @@ assert(bankBall.rally.split);
 
 buildScene({pitch:1},{wrongNumber:1});
 const controllerButtons=Array.from({length:17},()=>({pressed:false}));
-controllerButtons[5].pressed=true;
 slots[0]=0;
+previous.delete(0);
+readInput(0,{axes:[0,0,0,0],buttons:controllerButtons});
+controllerButtons[5].pressed=true;
 const gamepadInput=readInput(0,{axes:[0,0,1,0],buttons:controllerButtons});
 assert(gamepadInput.trick && gamepadInput.aimX===1);
 tick(.016,gamepadInput);
@@ -647,7 +649,7 @@ finishRound(0);
 assert.equal(state,'kineticDraft');
 assert.equal(kineticDraft.picks[0],null);
 assert(kineticDraft.picks.slice(1).every(p=>p.offers.length===4));
-setClock(performance.now()+400);
+setClock(performance.now()+2300);
 kineticPick(1,0);kineticPick(2,1);kineticPick(3,2);
 assert.deepEqual(builds.map(p=>p.length),[0,1,1,1]);
 tickKineticDraft([neutral,neutral,neutral,neutral],performance.now());
@@ -674,7 +676,7 @@ for(let fight=1;fight<=5;fight++) {
   finishRound(0);
   if(fight===5) break;
   assert.equal(state,'kineticDraft');
-  setClock(performance.now()+410);
+  setClock(performance.now()+2300);
   kineticPick(1,0);
   assert.equal(builds[0].length,0);
   assert.equal(builds[1].length,fight);
@@ -697,3 +699,48 @@ b.x=a.x+70;
 obstacles=[{x:a.x+32,y:a.y-28,w:12,h:56,integrity:Infinity}];
 resolvePushes([{p:a,power:1}]);
 assert.equal(b.vx,0);
+
+// Phone phase changes must consume held actions until the player releases.
+scene();
+slots[0]=1000000;
+previous.delete(slots[0]);
+const phoneButtons=Array.from({length:17},()=>({pressed:false}));
+phoneButtons[2].pressed=true;
+const phoneSample={phone:true,axes:[1,0,1,0],buttons:phoneButtons};
+assert(readInput(0,phoneSample).inputLost);
+assert(!readInput(0,phoneSample).charging);
+phoneButtons[2].pressed=false;
+readInput(0,phoneSample);
+phoneButtons[2].pressed=true;
+assert(readInput(0,phoneSample).charging);
+state='paused';
+assert(!readInput(0,phoneSample).charging);
+
+// Host navigation and external gamepads cannot claim seats.
+scene();
+state='menu';editingMode=null;slots.length=0;
+const phonePool=[];
+window.couchJoinstick={sample:()=>phonePool,reserved:index=>index>=1000000,label:index=>'Phone '+index};
+navigator.getGamepads=()=>[{index:7,connected:true,buttons:[{pressed:true}],axes:[1,0]}];
+assert.equal(phoneInputs().length,0);
+assert(!join(7));
+for(let i=0;i<7;i++) {
+  const buttons=Array.from({length:17},()=>({pressed:false}));buttons[0].pressed=true;
+  phonePool.push({index:1000000+i,phone:true,mapping:'standard',connected:true,axes:[0,0,0,0],buttons});
+  phoneInputs();
+}
+assert.equal(slots.length,6);
+assert.equal(describeRingoutPhones()[1000006].hint,'All six seats are taken.');
+phonePool.forEach(pad=>pad.buttons[0].pressed=false);
+phoneInputs();
+// A stale or another player's token cannot choose an upgrade.
+builds=slots.map(()=>[]);score=slots.map(()=>0);humanCount=6;
+startKineticDraft(0);
+setClock(performance.now()+2300);
+const view=phoneDraftView(1);
+ringoutPhoneCommand(slots[2],{token:view.token,pick:0});
+assert.equal(builds[2].length,0);
+ringoutPhoneCommand(slots[1],{token:view.token,pick:0});
+assert.equal(builds[1].length,1);
+ringoutPhoneCommand(slots[1],{token:view.token,pick:1});
+assert.equal(builds[1].length,1);

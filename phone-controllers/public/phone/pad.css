@@ -299,15 +299,53 @@ body[data-game="track"] { --base: #21192b; --panel: #3c2c48; --edge: #786080; --
   .blitz-preview { align-self: start; }
 }
 
-body[data-game="hoops"] #controls.hoops-recovery { grid-template-columns: minmax(0, 1fr); }
-body[data-game="hoops"] .hoops-recovery #face-buttons {
-  grid-template: var(--face-size) / repeat(3, var(--face-size));
-  gap: clamp(8px, 3vw, 20px);
+/* Hoops keeps the diamond and joystick anchors stable through every court role. */
+body[data-game="hoops"] main { position: relative; }
+body[data-game="hoops"] header { grid-template-columns: minmax(0, 1fr) auto; }
+body[data-game="hoops"] #system-buttons {
+  grid-area: auto;
+  position: absolute;
+  width: 88px;
+  left: 50%;
+  top: 48%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
 }
-body[data-game="hoops"] .hoops-recovery #face-buttons::before { display: none; }
-body[data-game="hoops"] .hoops-recovery #face-buttons [data-action="0"] { grid-area: 1 / 1; }
-body[data-game="hoops"] .hoops-recovery #face-buttons [data-action="1"] { grid-area: 1 / 2; }
-body[data-game="hoops"] .hoops-recovery #face-buttons [data-action="3"] { grid-area: 1 / 3; }
+body[data-game="hoops"] #utility-buttons {
+  position: absolute;
+  left: 50%;
+  bottom: max(12px, var(--safe-bottom));
+  transform: translateX(-50%);
+  width: 108px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0;
+}
+body[data-game="hoops"] #utility-buttons [data-action="5"],
+#hoops-power-status { grid-area: 1 / 1; }
+body[data-game="hoops"] .controller-footer #hint { max-width: calc(50% - 66px); font-size: .75rem; }
+#hoops-power-status { text-align: center; font-size: .72rem; color: var(--muted); min-height: 44px; display: grid; place-content: center; }
+body[data-game="hoops"] #movement { width: 100%; }
+#hoops-break-panel {
+  grid-area: 1 / 1;
+  width: min(100%, 250px);
+  max-height: var(--play-height);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  align-self: center;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--panel);
+}
+#hoops-break-panel h2 { color: var(--accent); font-size: .95rem; line-height: 1.25; margin: 0 0 7px; text-wrap: balance; }
+#hoops-break-panel p { font-size: .75rem; line-height: 1.4; margin: 0; }
+#hoops-break-panel dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; font-size: .72rem; gap: 3px 8px; margin: 8px 0 0; }
+#hoops-break-panel dd { margin: 0; font-weight: bold; color: var(--accent); }
+@media (prefers-reduced-motion: reduce) {
+  #hoops-break-panel { scroll-behavior: auto; }
+}
 
 body[data-game="lobby"] header { grid-template-columns: minmax(0, 1fr) auto; }
 body[data-game="lobby"] #system-buttons { display: none; }
@@ -358,3 +396,47 @@ body[data-game="lobby"] .utilities { flex-wrap: wrap; justify-content: flex-end;
 #profile-game-previews > div { padding: 8px 4px; text-align: center; border-radius: 8px; background: var(--panel); font-size: .75rem; }
 #profile-game-previews svg { width: 42px; height: 42px; }
 #profile-dialog .profile-actions { position: sticky; bottom: -16px; margin-top: 14px; padding-block: 12px; background: var(--base); }
+
+#blitz-playbook[data-kind="perk"] { grid-template: "title" auto "choices" minmax(0,1fr) / minmax(0,1fr); }
+#blitz-playbook[data-kind="perk"] .blitz-choices { grid-template-columns: 1fr; }
+#blitz-playbook[data-kind="perk"] .blitz-choices button { min-height: 64px; font-size: .86rem; text-align: left; padding: 10px; }
+
+/* Ringout keeps the move stick, aim stick, and face diamond in fixed columns. */
+body[data-game="ringout"] #controls {grid-template-columns: 1fr .78fr 1.22fr;}
+body[data-game="ringout"] #movement .stick {width:min(100%,calc(var(--play-height) * .90));}
+body[data-game="ringout"] #aim .stick {width:min(100%,calc(var(--play-height) * .65));}
+body[data-game="ringout"] #actions {--face-size:clamp(44px,min(12.2cqw,calc(var(--play-height) / 2.62)),108px);}
+body[data-game="ringout"] #utility-buttons {display:none;}
+body.ringout-drafting #controls {visibility:hidden;}
+#ringout-upgrades {grid-area:2 / 1;align-self:stretch;display:flex;flex-direction:column;gap:6px;min-height:0;overflow:auto;padding:4px;}
+#ringout-upgrades>strong {color:var(--accent);font-size:1rem;}
+.ringout-cards {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;flex:1;min-height:0;}
+.ringout-cards button {padding:8px;display:flex;flex-direction:column;gap:7px;text-align:left;min-height:65px;overflow:auto;}
+.ringout-cards strong {font-size:.95rem;color:var(--accent);}
+.ringout-cards span {font-size:.78rem;line-height:1.25;}
+.ringout-cards button[aria-pressed="true"] {border-color:var(--accent);}
+#ringout-upgrades small {font-size:.7rem;}
+@media(max-height:375px) and (orientation:landscape) {
+  body[data-game="ringout"] main {--play-height:calc(var(--pad-height) - 103px);min-height:var(--pad-height);}
+  .ringout-cards button {padding:5px;gap:3px;}
+  .ringout-cards span {font-size:.7rem;}
+}
+
+/* Track reserves the same two control zones during every event. */
+body[data-game="track"] #controls { grid-template-columns: repeat(2, minmax(0, 1fr)); position: relative; }
+body[data-game="track"] #system-buttons {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  grid-area: auto; width: 94px; max-width: 18%; z-index: 2;
+}
+body[data-game="track"] main { position: relative; }
+body[data-game="track"] #track-plan {
+  position: absolute; left: 39%; right: 40%; top: 0; z-index: 3;
+  max-height: 53%; overflow-y: auto; padding: 8px; border: 1px solid var(--edge);
+  border-radius: 9px; background: var(--base); font-size: clamp(.70rem, 2.3vmin, .95rem);
+}
+#track-plan h2 { font-size: 1em; margin: 0 0 5px; }
+#track-plan strong { display: block; color: var(--accent); }
+#track-plan p { margin: 5px 0 0; }
+body[data-game="track"][data-track-phase="live"] #track-plan { display: none; }
+
+body[data-game="track"]:is([data-track-phase="desk"], [data-track-phase="draft"]) #system-buttons { top: 74%; }

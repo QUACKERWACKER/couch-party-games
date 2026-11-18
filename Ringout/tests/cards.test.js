@@ -14,6 +14,8 @@ function element() {
     append(...children){ this.children.push(...children); },
     replaceChildren(...children){ this.children = children; },
     getContext(){ return canvas; },
+    querySelector(){ return element(); },
+    querySelectorAll(){ return []; },
   };
 }
 

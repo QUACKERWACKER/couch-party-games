@@ -5,7 +5,7 @@ const teams = ['Hot Dogs', 'Turbo Toads'];
 const colors = ['#ff8562', '#6df2ca'];
 const cpuNames = [['Frank Furter', 'Mustard Mike', 'Relish Randy', 'Bun Jovi'], ['Hop Scotch', 'Wart Simpson', 'Croak Hogan', 'Ribbit De Niro']];
 const byId = new Map(events.map(event => [event.id, event]));
-const players = new Map([['keyboard', {id: 'keyboard', name: 'Keyboard', team: 0}]]);
+const players = new Map();
 const claims = new Map();
 const draftPresets = cups.map(cup => cup.ids);
 const cpuSettings = [
@@ -13,11 +13,19 @@ const cpuSettings = [
   {name: 'Arcade', pace: 1, timing: .82, mark: .65},
   {name: 'All-Star', pace: 1.10, timing: .93, mark: .79},
 ];
-const controlLabels = {j: 'A / J', k: 'B / K', i: 'Y / I'};
+const controlLabels = {j: 'A', k: 'B', i: 'Y'};
+const tactics = [
+  {name: 'Balanced', help: 'Standard stamina and trick recovery.'},
+  {name: 'Sprinter', help: 'Turbo lasts longer. Tricks take longer to recharge.'},
+  {name: 'Prankster', help: 'Tricks recharge faster. Turbo drains faster.'},
+];
+const phoneAxes = new Map();
+const inputContexts = new Map();
+const neutralRequired = new Set();
+const stickLatch = new Set();
+const playerLimit = 16;
 const recordKey = 'blitz-track-records-v1';
 const records = loadRecords();
-const held = new Set();
-const touches = new Map();
 const previousPads = new Map();
 const padActions = [[0, 'j'], [1, 'k'], [3, 'i'], [2, 'l']];
 const buttonByKey = new Map(padActions.map(([index, key]) => [key, index]));
@@ -27,9 +35,6 @@ const ctx = canvas.getContext('2d');
 const clamp = (value, minimum = 0, maximum = 1) => Math.max(minimum, Math.min(value, maximum));
 let program = [...quickMeet];
 let connected = new Set();
-let nextPlayer = 2;
-let keyboardTeam = 0;
-let keyboardAutomatic = true;
 let draftIndex = 0;
 let draftPreset = 0;
 let scores = [0, 0];
@@ -48,6 +53,7 @@ let difficulty = 1;
 let heatNumber = 0;
 let stadiumVisible = true;
 let ready = new Set();
+let deskOpenedAt = 0;
 
 function loadRecords() {
   try {
@@ -85,9 +91,7 @@ function button(label, action, pressed) {
 }
 
 function available(team) {
-  const roster = [...players.values()].filter(player => player.id === 'keyboard' || connected.has(player.id));
-  const useKeyboard = !keyboardAutomatic || roster.length === 1;
-  return roster.filter(player => (useKeyboard || player.id !== 'keyboard') &&
+  return [...players.values()].filter(player => connected.has(player.id) &&
     (team === undefined || team === player.team));
 }
 
@@ -102,7 +106,6 @@ function switchTeam(player) {
   const rival = roster.length === 2 && roster.find(candidate => candidate !== player);
   player.team = 1 - player.team;
   if (rival) rival.team = 1 - player.team;
-  if (players.has('keyboard')) keyboardTeam = players.get('keyboard').team;
   if (screen === 'setup') renderSetup();
 }
 
@@ -141,10 +144,6 @@ function selectPlayer(select, team, selected, defaultLabel = 'CPU') {
 function renderSetup() {
   $('difficulty').textContent = `CPU · ${cpuSettings[difficulty].name}`;
   renderRecords();
-  const keyboard = available().find(player => player.id === 'keyboard');
-  $('keyboard').setAttribute('aria-pressed', Boolean(keyboard));
-  $('keyboard').textContent = keyboard ? 'Keyboard joined' : 'Join keyboard';
-  $('switch').disabled = !keyboard;
   $('rosters').replaceChildren(...teams.map((name, team) => {
     const names = available(team).map((player, i) => player.name + (i === 0 ? ' ★' : ''));
     return gameElement('div', {text: `${name} · ${names.join(', ') || 'CPU'}`, className: team ? 'cool' : 'hot'});
@@ -257,6 +256,7 @@ function openDesk() {
   $('reset').hidden = true;
   $('assignments').hidden = false;
   ready = new Set();
+  deskOpenedAt = performance.now();
   $('rematch').hidden = true;
   $('recap').hidden = true;
   $('desk-title').textContent = event.name;
@@ -266,7 +266,7 @@ function openDesk() {
   refreshScore(`EVENT ${round + 1} / ${program.length}`, event.name);
   renderAssignments();
   $('advance').focus();
-  setStatus('Clerk of the course: athletes to your marks.');
+  setStatus('Read the tutorial. Choose your phone plan, then Ready. Your accent colors your shoes; jerseys identify your team.');
 }
 
 function eventEntry(team) {
@@ -280,7 +280,7 @@ function eventEntry(team) {
 }
 
 function markReady(player) {
-  if (!player || !teams.some((_, team) => eventEntry(team).player === player)) return;
+  if (performance.now() - deskOpenedAt < 1200 || !player || !teams.some((_, team) => eventEntry(team).player === player)) return;
   ready.add(player.id);
   const entries = teams.map((_, team) => eventEntry(team).player).filter(Boolean);
   if (entries.every(entry => ready.has(entry.id))) beginHeat();
@@ -297,14 +297,15 @@ function renderAssignments() {
     select.disabled = entry.locked || !entry.roster.length;
     select.onchange = () => assign(index, select.value);
     caption.append(select);
+    if (entry.player) caption.append(gameElement('small', {text: ' · ' + athletePlan(entry.player).name}));
     if (entry.player && ready.has(entry.player.id)) caption.append(gameElement('strong', {text: ' Ready'}));
     return caption;
   }));
   const roster = available();
   $('desk-help').textContent = roster.length === 2 ? 'Head-to-head · one player on each team.'
     : roster.length === 1 ? 'Solo · you enter every event against the CPU.'
-      : 'Team captains can press Y / Event to cycle their athlete or CPU.';
-  $('desk-help').textContent += ' · A / J readies your athlete. Start begins immediately.';
+      : 'Team captains can tap Y to choose an athlete or CPU.';
+  $('desk-help').textContent += ' · Read your phone plan, then tap Ready. Everyone gets a countdown.';
 }
 
 function assign(team, id) {
@@ -333,11 +334,12 @@ function renderTutorial(event) {
       rows.push([stations, skill.help]);
     }
   } else {
-    rows.push(['A / J · Stride', event.walk ? 'Tap in green and build a clean-step streak.' :
+    rows.push(['Left stick · Pace', 'Push up to sustain a steady pace while watching the stadium. Timed Stride taps build extra flow.']);
+    rows.push(['A · Stride', event.walk ? 'Tap in green and build a clean-step streak.' :
       'Wait for GO, then tap at a smooth cadence. Green strides build flow and refill stamina.']);
-    rows.push(['B / K · Turbo', event.walk ? 'Holding this is a jog. The official can flag it.' :
+    rows.push(['B · Turbo', event.walk ? 'Holding this is a jog. The official can flag it.' :
       'Hold to accelerate and release to recover. Time your bursts around bends and marked surges.']);
-    rows.push(['Y / I · Event', {
+    rows.push(['Y · Event', {
       jump: 'Tap at the hurdle. A centered jump earns a clean boost.',
       steeple: 'Tap in green to jump a barrier. Hold through the blue water zone.',
       pass: 'Tap in green to hand off. Hit the center to launch the next runner.',
@@ -350,7 +352,7 @@ function renderTutorial(event) {
     Distance: 'Restores turbo and gives you a burst.',
     Relays: 'Bonks a rival if they are within reach.',
   }[event.group] ?? 'Boosts you and can slow a nearby rival.';
-  rows.push(['X / L · Dirty trick', `${event.trick}. ${payoff} Try it while the official looks away. Three flags disqualify you.`]);
+  rows.push(['X · Dirty trick', `${event.trick}. ${payoff} Try it while the official looks away. Three flags disqualify you.`]);
   $('tutorial-controls').replaceChildren(...rows.map(([control, instructions]) => {
     const row = gameElement('li');
     row.append(gameElement('kbd', {text: control}), gameElement('span', {text: instructions}));
@@ -372,7 +374,7 @@ function beginHeat() {
       const player = entries[team];
       return {
         id: player?.id, name: player?.name ?? cpuNames[team][round % cpuNames[team].length],
-        team, p: 0, tank: .83, cadence: 0, lastStride: -10, boost: 0, slow: 0, loaded: 0,
+        tactic: player?.tactic ?? 0, team, p: 0, tank: .83, cadence: 0, lastStride: -10, boost: 0, slow: 0, loaded: 0,
         gateIndex: 0, gateUsed: false, kick: 0, strikes: 0, cooldown: 0, heat: 0,
         finish: null, mark: 0, stage: -1, taps: 0, charge: 0, cheatMark: 0,
         flow: 0, bestFlow: 0, clean: 0, missed: 0, tricks: 0, leaned: false,
@@ -387,7 +389,6 @@ function beginHeat() {
   $('pause').hidden = false;
   canvas.scrollIntoView({block: 'nearest'});
   $('pause').textContent = 'Pause';
-  $('touch').classList.toggle('playing', entries.some(player => player?.id === 'keyboard'));
   setStatus(`Dirty trick · ${event.trick}. Watch the official!`);
 }
 
@@ -418,7 +419,7 @@ function foul(runner, call) {
 
 function tryTrick(runner) {
   if (runner.cooldown > 0) return;
-  runner.cooldown = 2.5;
+  runner.cooldown = runner.tactic === 2 ? 2 : runner.tactic === 1 ? 3.2 : 2.5;
   if (watching() || runner.heat > .75) {
     foul(runner, 'WHISTLE! Excessive nonsense.');
     return;
@@ -530,11 +531,10 @@ function clearGate(runner, kind, perfect = false) {
 }
 
 function activeHuman(runner) {
-  return runner.id && (runner.id === 'keyboard' ? players.has('keyboard') : connected.has(runner.id));
+  return Boolean(runner.id && connected.has(runner.id));
 }
 
 function downFor(runner, key) {
-  if (runner.id === 'keyboard') return held.has(key) || [...touches.values()].includes(key);
   return Boolean(previousPads.get(runner.id) & (1 << buttonByKey.get(key)));
 }
 
@@ -550,6 +550,9 @@ function updateRace(runner, dt) {
   const surge = event.surges?.find(([from, to]) => runner.p >= from && runner.p <= to);
   const drafting = event.draft && rival.p >= runner.p && rival.p - runner.p < .095;
   const human = activeHuman(runner);
+  // Pushing the stick sustains a moderate pace. Timed face-button strides build flow.
+  const stickPower = human ? Math.max(0, -(phoneAxes.get(runner.id)?.[1] ?? 0)) : 0;
+  if (stickPower > .15) runner.cadence = Math.max(runner.cadence, stickPower * .66);
   const turbo = human ? downFor(runner, 'k') : (!event.walk && (Boolean(surge) || (runner.p > .61 && !event.bend)));
   const usingTurbo = turbo && runner.tank > .04;
   const bend = inBend(event, runner.p);
@@ -575,7 +578,7 @@ function updateRace(runner, dt) {
     runner.loaded = 0;
   }
 
-  if (usingTurbo) runner.tank = clamp(runner.tank - dt * (event.drain ?? .43));
+  if (usingTurbo) runner.tank = clamp(runner.tank - dt * (event.drain ?? .43) * (runner.tactic === 1 ? .80 : runner.tactic === 2 ? 1.20 : 1));
   else runner.tank = clamp(runner.tank + dt * (drafting ? .48 : (event.regen ?? .24)));
   if (human && event.walk && usingTurbo && watching() && runner.cooldown <= 0) {
     runner.cooldown = 2.5;
@@ -634,11 +637,12 @@ function fieldAction(event, runner, key, down) {
   }
   if ((mode === 'tap' && down) || (mode === 'release' && !down && runner.charge > .06)) {
     const error = Math.abs(timing.cursor - .69);
-    const accuracy = error <= timing.width ? 1 - error * .38 : clamp(.73 - error);
+    const window = timing.width * (runner.tactic === 2 ? .80 : 1);
+    const accuracy = error <= window ? 1 - error * .38 : clamp(.73 - error);
     const power = mode === 'release' ? .60 + .40 * clamp(runner.charge * 3.4) : 1;
     recordStation(runner, timing.index, accuracy * power);
-    if (error <= timing.width) tones([494, 659], 'sine', .08);
-    announce(error <= timing.width ? 'NAILED IT!' : 'WOBBLY!', .53);
+    if (error <= window) tones([494, 659], 'sine', .08);
+    announce(error <= window ? 'NAILED IT!' : 'WOBBLY!', .53);
   }
 }
 
@@ -687,10 +691,11 @@ function updateField(runner, dt) {
     return;
   }
   if (!timing.ready || !activeHuman(runner)) return;
-  if (timing.skill.mode === 'release' && downFor(runner, timing.skill.key)) runner.charge += dt;
+  if (timing.skill.mode === 'release' && downFor(runner, timing.skill.key)) runner.charge += dt * (runner.tactic === 1 ? 1.25 : 1);
   if (timing.skill.mode === 'balance') {
+    const axis = -(phoneAxes.get(runner.id)?.[1] ?? 0);
     const lift = downFor(runner, timing.skill.key);
-    runner.balance = clamp(runner.balance + (lift ? .68 : -.49) * dt);
+    runner.balance = clamp(runner.balance + (Math.abs(axis) > .15 ? axis * .68 : lift ? .68 : -.49) * dt);
     if (runner.balance >= .51 && runner.balance <= .79 && runner.slow <= 0) runner.stable += dt;
   }
 }
@@ -773,7 +778,6 @@ function finishHeat() {
   $('recap').hidden = false;
   results.push(`${heat.event.name} · ${headline} ${a.name} ${showMark(a)} / ${b.name} ${showMark(b)}`);
   screen = 'result';
-  $('touch').classList.remove('playing');
   $('desk').hidden = false;
   $('pause').hidden = true;
   $('assignments').hidden = true;
@@ -805,7 +809,7 @@ function reset() {
   refreshScore('MEET SETUP', 'TRACK & FIELD');
   renderSetup();
   $('start').focus();
-  setStatus('Press A on a controller to join, or play on the keyboard.');
+  setStatus('Pair your phone in the launcher, then tap Join. Up to 16 athletes can join.');
 }
 
 function advance() {
@@ -830,7 +834,8 @@ function describePhones() {
   for (const player of roster) {
     if (!window.couchJoinstick.label(Number(player.id))) continue;
     const buttons = {};
-    const description = {player: player.name, team: teams[player.team], buttons, hint: ''};
+    const description = {player: player.name, team: teams[player.team], buttons, hint: '', phase: screen,
+      context: phoneContext(), stick: 'Pace / select'};
     descriptions[player.id] = description;
     if (screen === 'setup') {
       if (draftController(player)) {
@@ -839,27 +844,36 @@ function describePhones() {
       }
       buttons[5] = 'Switch team';
       if (!$('start').disabled) buttons[9] = 'Start meet';
-      description.hint = 'Draft events or start with the lineup on the shared screen.';
+      description.hint = 'Your accent colors your shoes. Team jerseys show your side. Draft or start a meet.';
+      description.stick = 'Pace / select';
     } else if (screen === 'draft') {
       if (draftController(player)) {
         buttons[0] = program.includes(events[draftIndex].id) ? 'Remove event' : 'Add event';
-        buttons[1] = 'Previous';
+        buttons[1] = 'Next event';
         buttons[2] = 'Back to lobby';
-        buttons[3] = 'Next';
+        buttons[3] = 'Meet preset';
         buttons[5] = 'Change preset';
         if (program.length) buttons[9] = 'Start meet';
       }
-      description.hint = `${events[draftIndex].name} · ${program.length} events drafted`;
+      description.plan = {title: events[draftIndex].name, selected: program.includes(events[draftIndex].id) ? 'In your meet' : 'Available',
+        detail: `${program.length} events selected. Move the stick left or right to browse. A adds or removes. Y cycles presets.`};
+      description.hint = 'Look at your phone to draft. Start confirms your meet.';
     } else if (screen === 'desk') {
-      buttons[9] = 'Start event';
+
       const entry = entries[player.team];
       if (!entry.locked && entry.roster[0] === player) buttons[3] = 'Choose athlete';
       if (entry.player === player && !ready.has(player.id)) buttons[0] = 'Ready';
-      description.primary = buttons[0] ? 0 : 9;
-      description.hint = entry.player === player ? (ready.has(player.id) ? 'Ready. Waiting for the other athlete.' : 'Read the tutorial, then tap Ready.')
-        : buttons[3] ? 'Cycle through your teammates or CPU. The shared screen shows the entry.'
-          : 'The tutorial and lineup are on the shared screen.';
+      description.primary = buttons[0] ? 0 : 3;
+      description.plan = {
+        title: byId.get(program[round]).name,
+        selected: athletePlan(player).name,
+        detail: athletePlan(player).help,
+        waiting: ready.has(player.id),
+      };
+      description.stick = entry.player === player ? '← Plan →' : 'Waiting';
+      description.hint = 'Look at your phone to choose a plan with the stick. Read the shared-screen tutorial, then Ready.';
     } else if (screen === 'result') {
+      buttons[5] = 'All games';
       buttons[9] = round + 1 < program.length ? 'Next event' : 'Back to setup';
       if (round + 1 === program.length) buttons[0] = 'Rematch';
       description.hint = `${heat.event.name} · ${teams[0]} ${scores[0]}–${scores[1]} ${teams[1]}`;
@@ -868,7 +882,8 @@ function describePhones() {
       if (runner?.feedback && runner.feedback.expires > heat.t && !paused) {
         description.cue = {id: `${heat.number}:${runner.feedback.id}`, kind: runner.feedback.kind};
       }
-      if (roster[0] === player) buttons[9] = paused ? 'Resume' : 'Pause';
+      buttons[9] = paused ? 'Resume' : 'Pause';
+      description.context = phoneContext();
       if (paused) description.hint = 'Event paused.';
       else if (!runner || runner.finish !== null) description.hint = 'Watch the rest of the event on the shared screen.';
       else if (heat.event.stages) {
@@ -882,6 +897,7 @@ function describePhones() {
         description.primary = buttonByKey.get(fieldKey(timing, runner));
         buttons[2] = 'Dirty trick';
         description.hint = `${stage} · ${skill.help}`;
+        description.stick = skill.mode === 'balance' ? 'Balance ↕' : 'Watch the stadium';
       } else {
         const gate = readGate(heat.event, runner);
         buttons[0] = heat.event.walk ? 'Step' : 'Stride';
@@ -897,21 +913,63 @@ function describePhones() {
       }
     }
   }
+  descriptions._default = {
+    context: phoneContext(), phase: screen, buttons: players.size >= playerLimit ? {} : {0: 'Join'},
+    hint: players.size >= playerLimit ? 'Meet full. A host can free a phone seat from the launcher.' :
+      screen === 'live' ? 'Join now to enter the next event. Watch this race on the shared screen.' : 'Tap Join to enter the meet.',
+    stick: 'Pace / select',
+  };
   return descriptions;
 }
 
 function draftController(player) {
-  return available().find(candidate => candidate.id !== 'keyboard') === player;
+  return available()[0] === player;
 }
+
+function phoneContext() {
+  const stage = screen === 'live' && heat.event.stages ? fieldTiming(heat.event, heat.t).index : '';
+  return `${screen}:${heatNumber}:${round}:${paused}:${stage}`;
+}
+
+function athletePlan(player, event = byId.get(program[round])) {
+  const choice = player?.tactic ?? 0;
+  if (!event?.stages) return tactics[choice];
+  return [
+    tactics[0],
+    {name: 'Technician', help: 'Charges build faster. Tricks take longer to recharge.'},
+    {name: 'Prankster', help: 'Tricks recharge faster. Timing windows are narrower.'},
+  ][choice];
+}
+
+function changePlan(player, direction) {
+  if (ready.has(player.id) || !teams.some((_, team) => eventEntry(team).player === player)) return;
+  player.tactic = ((player.tactic ?? 0) + direction + tactics.length) % tactics.length;
+  renderAssignments();
+}
+
+function syncProfiles() {
+  let changed = false;
+  for (const player of players.values()) {
+    const name = window.couchJoinstick?.label(Number(player.id));
+    if (name && name !== player.name) {
+      player.name = name;
+      changed = true;
+      const runner = heat?.runners.find(entry => entry.id === player.id);
+      if (runner) runner.name = name;
+    }
+  }
+  if (changed && screen === 'setup') renderSetup();
+}
+
 
 function managePads() {
   const phase = screen;
-  const pads = gameControllerInputs();
+  const pads = window.couchJoinstick?.sample() ?? [];
   const nextConnected = new Set(pads.map(pad => String(pad.index)));
   const changed = connected.size !== nextConnected.size || [...connected].some(id => !nextConnected.has(id));
   if (screen === 'live') {
     for (const runner of heat.runners) {
-      if (!runner.id || runner.id === 'keyboard') continue;
+      if (!runner.id) continue;
       if (connected.has(runner.id) && !nextConnected.has(runner.id)) {
         runner.charge = runner.loaded = 0;
         runner.hadCpu = true;
@@ -932,17 +990,38 @@ function managePads() {
     const changedButtons = down ^ last;
     const press = index => Boolean(down & changedButtons & (1 << index));
     previousPads.set(id, down);
+    const context = phoneContext();
+    if (inputContexts.get(id) !== context) {
+      inputContexts.set(id, context);
+      neutralRequired.add(id);
+      const runner = heat?.runners.find(entry => entry.id === id);
+      if (runner) runner.charge = runner.loaded = 0;
+    }
     if (screen !== phase) continue;
+    if (neutralRequired.has(id)) {
+      previousPads.set(id, 0);
+      phoneAxes.set(id, [0, 0]);
+      if (!down && Math.abs(pad.axes[0]) < .15 && Math.abs(pad.axes[1]) < .15) neutralRequired.delete(id);
+      continue;
+    }
+    phoneAxes.set(id, pad.axes.slice(0, 2));
     if (pad.inputCanceled) {
       const runner = screen === 'live' && heat.runners.find(candidate => candidate.id === id);
       if (runner) runner.charge = runner.loaded = 0;
+      previousPads.set(id, 0);
+      phoneAxes.set(id, [0, 0]);
       continue;
     }
-    if (['setup', 'draft', 'desk'].includes(screen) && !players.has(id) && press(0)) {
-      const roster = keyboardAutomatic ? available().filter(player => player.id !== 'keyboard') : available();
+    if (!players.has(id) && press(0)) {
+      // A reserved seat survives a brief disconnect. New athletes wait for the next event.
+      for (const [oldId] of players) {
+        if (!connected.has(oldId) && !window.couchJoinstick.reserved(Number(oldId))) players.delete(oldId);
+      }
+      if (players.size >= playerLimit) continue;
+      const roster = available();
       const team = roster.filter(player => player.team === 0).length > roster.filter(player => player.team === 1).length ? 1 : 0;
-      const name = window.couchJoinstick?.label(pad.index) ?? `Pad ${pad.index + 1}`;
-      players.set(id, {id, name: `P${nextPlayer++} · ${name}`, team});
+      const name = window.couchJoinstick.label(pad.index);
+      players.set(id, {id, name, team, tactic: 0});
       balanceDuel();
       if (screen === 'setup') renderSetup();
       if (screen === 'draft') renderDraft();
@@ -951,6 +1030,13 @@ function managePads() {
     }
     const player = players.get(id);
     if (!player) continue;
+    const axis = pad.axes[0] ?? 0;
+    if (Math.abs(axis) < .25) stickLatch.delete(id);
+    if (Math.abs(axis) > .6 && !stickLatch.has(id)) {
+      stickLatch.add(id);
+      if (screen === 'draft' && draftController(player)) moveDraft(axis > 0 ? 1 : -1);
+      if (screen === 'desk') changePlan(player, axis > 0 ? 1 : -1);
+    }
     if (screen === 'setup' && press(5)) switchTeam(player);
     if (screen === 'setup' && press(1) && draftController(player)) cycleDifficulty();
     if (screen === 'setup' && press(2) && draftController(player)) {
@@ -961,11 +1047,14 @@ function managePads() {
       if (draftController(player)) {
         if (press(2)) closeDraft();
         else if (press(9)) startMeet();
-        else if (press(5)) nextPreset();
+        else if (press(5) || press(3)) nextPreset();
         else if (press(0)) toggleDraftEvent();
-        else if (press(1) || press(14)) moveDraft(-1);
-        else if (press(3) || press(15)) moveDraft(1);
+        else if (press(1)) moveDraft(1);
       }
+      continue;
+    }
+    if (screen === 'result' && press(5)) {
+      document.querySelector('header a').click();
       continue;
     }
     if (screen === 'desk' && press(3)) cycleAthlete(player);
@@ -977,10 +1066,10 @@ function managePads() {
       rematch();
       continue;
     }
-    if (press(9) && (available()[0] === player || screen !== 'live')) {
+    if (press(9)) {
       if (screen === 'setup') startMeet();
       else if (screen === 'live') pause();
-      else advance();
+      else if (screen === 'result') advance();
       continue;
     }
     const runner = screen === 'live' && heat.runners.find(candidate => candidate.id === id);
@@ -992,7 +1081,12 @@ function managePads() {
     }
   }
   if (changed) {
-    for (const id of previousPads.keys()) if (!connected.has(id)) previousPads.delete(id);
+    for (const id of previousPads.keys()) if (!connected.has(id)) {
+      previousPads.delete(id);
+      phoneAxes.delete(id);
+      inputContexts.delete(id);
+      stickLatch.delete(id);
+    }
     if (screen === 'setup') {
       balanceDuel();
       renderSetup();
@@ -1002,43 +1096,9 @@ function managePads() {
   }
 }
 
-function keyboardAction(key, down) {
-  if (screen === 'live') action(heat.runners.find(runner => runner.id === 'keyboard'), key, down);
-}
-
-document.addEventListener('keydown', event => {
-  const key = event.key.toLowerCase();
-  if (document.querySelector('dialog[open]')) return;
-  if (screen === 'live' && key === 'escape' && !event.repeat) pause();
-  if (!buttonByKey.has(key) || screen !== 'live') return;
-  event.preventDefault();
-  if (!held.has(key)) {
-    held.add(key);
-    keyboardAction(key, true);
-  }
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && screen === 'live' && !paused) pause();
 });
-document.addEventListener('keyup', event => {
-  const key = event.key.toLowerCase();
-  if (held.delete(key)) keyboardAction(key, false);
-});
-window.addEventListener('blur', () => {
-  held.clear();
-  touches.clear();
-  if (screen === 'live' && !paused) pause();
-});
-for (const node of $('touch').querySelectorAll('button')) {
-  node.addEventListener('pointerdown', event => {
-    event.preventDefault();
-    node.setPointerCapture(event.pointerId);
-    touches.set(event.pointerId, node.dataset.key);
-    keyboardAction(node.dataset.key, true);
-  });
-  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-    node.addEventListener(type, event => {
-      if (touches.delete(event.pointerId)) keyboardAction(node.dataset.key, false);
-    });
-  }
-}
 
 $('sound').onclick = () => {
   soundOn = !soundOn;
@@ -1064,16 +1124,6 @@ $('draft-start').onclick = startMeet;
 $('advance').onclick = advance;
 $('reset').onclick = reset;
 $('pause').onclick = pause;
-$('keyboard').onclick = () => {
-  const joined = available().some(player => player.id === 'keyboard');
-  keyboardAutomatic = false;
-  if (joined) players.delete('keyboard');
-  else players.set('keyboard', {id: 'keyboard', name: 'Keyboard', team: keyboardTeam});
-  balanceDuel();
-  renderSetup();
-};
-$('switch').onclick = () => switchTeam(players.get('keyboard'));
-
 function box(x, y, w, h, color) {
   ctx.fillStyle = color;
   ctx.fillRect(x, y, w, h);
@@ -1239,10 +1289,10 @@ function raceView() {
     words(`${runner.name}${split}`, clamp(x, 94, 846), base - 20, 16, '#fff9e8', 'center');
     if (runner.finish !== null) words(runner.finish === Infinity ? 'DQ' : 'FINISH', 927, base + 10, 24, '#ffea9b', 'center');
     const left = runner.team ? 518 : 30;
-    const command = {pass: 'PASS!', jump: 'JUMP!', cup: 'GRAB CUP!', splash: 'HOLD I / Y!'}[gate.kind];
+    const command = {pass: 'PASS!', jump: 'JUMP!', cup: 'GRAB CUP!', splash: 'HOLD Y!'}[gate.kind];
     const boost = event.surges?.find(([from, to]) => runner.p >= from && runner.p <= to)?.[2];
     const lean = !event.gate && !runner.leaned && runner.p >= .85;
-    const hint = gate.inZone && !runner.gateUsed ? command : lean ? 'Y / I · LEAN' :
+    const hint = gate.inZone && !runner.gateUsed ? command : lean ? 'Y · LEAN' :
       boost ?? event.terrain?.find(([from, to]) => runner.p >= from && runner.p <= to)?.[3] ??
       (inBend(event, runner.p) ? 'BANKED TURN' : 'TURBO');
     words(hint, left, 317, 17, hint === command ? '#d7ff9b' : colors[runner.team]);
@@ -1278,7 +1328,8 @@ function fieldMeter(runner, timing) {
     }
     return;
   }
-  const bound = mode === 'balance' ? [.51, .79] : [.69 - timing.width, .69 + timing.width];
+  const widthScale = runner.tactic === 2 ? .80 : 1;
+  const bound = mode === 'balance' ? [.51, .79] : [.69 - timing.width * widthScale, .69 + timing.width * widthScale];
   box(left + bound[0] * width, 323, (bound[1] - bound[0]) * width, 11, '#a6e67f');
   const value = mode === 'balance' ? runner.balance : timing.cursor;
   box(left + value * width - 2, 320, 5, 17, '#fff8e7');
@@ -1357,36 +1408,15 @@ function draw() {
   updateGameText($('call'), message);
 }
 
-const touchButtons = [...$('touch').querySelectorAll('button')];
-
-function labelTouchControls() {
-  if (!$('touch').classList.contains('playing')) return;
-  const event = heat.event;
-  const labels = {j: event.walk ? 'Step' : 'Stride', k: 'Turbo', i: event.gate ? 'Event' : 'Finish lean', l: 'Dirty trick'};
-  if (event.stages) {
-    const {skill} = fieldTiming(event, heat.t);
-    labels.j = labels.k = labels.i = '';
-    if (skill.mode === 'sequence') {
-      labels.j = 'Step A';
-      labels.i = 'Step Y';
-    } else labels[skill.key] = skill.label;
-  }
-  for (const node of touchButtons) {
-    const label = labels[node.dataset.key];
-    updateGameText(node, label);
-    node.style.visibility = label ? '' : 'hidden';
-  }
-}
-
 function frame(now) {
   const dt = Math.min(.042, (now - lastFrame) / 1000);
   lastFrame = now;
   managePads();
+  syncProfiles();
   if (screen === 'live') updateHeat(dt);
   const state = `${screen}:${paused}`;
   if (state !== paintedScreen || (screen === 'live' && stadiumVisible && !paused && now - lastPaint >= 15)) {
     draw();
-    if (screen === 'live') labelTouchControls();
     paintedScreen = state;
     lastPaint = now;
   }

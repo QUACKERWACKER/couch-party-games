@@ -29,7 +29,7 @@
   const heartbeatTimeout = {blitz: 1400, track: 1400, ringout: 1500, hoops: 1600, bedrock: 1250}[game];
   const players = new Map();
   let nextId = 1_000_000;
-  let describe, onBlitzCommand, bedrockMessage;
+  let describe, onBlitzCommand, bedrockMessage, ringoutMessage;
 
   function addPlayer(slot) {
     const player = {slot, index: nextId++};
@@ -105,6 +105,14 @@
   window.couchJoinstick = {
     describe(callback) { describe = callback; },
     onBlitzCommand(callback) { onBlitzCommand = callback; },
+    feedback(index, duration) {
+      if(game!=='ringout') return;
+      const player=playerAt(index), now=performance.now();
+      if(!player || now<(player.feedbackAt || 0) || !room.connected(player.slot)) return;
+      player.feedbackAt=now+150;
+      room.send(player.slot,{ringoutFeedback:Math.max(0,Math.min(80,duration))});
+    },
+    onRingoutMessage(callback) { ringoutMessage = callback; },
     onBedrockMessage(callback) { bedrockMessage = callback; },
     sample() {
       if (room.status !== 'connected') return [];
@@ -158,7 +166,7 @@
     player.aim = player.sentInfo = undefined;
   });
   room.on('leave', ({slot, reason}) => {
-    if ((game === 'ringout' || game === 'hoops') && reason === 'kicked') {
+    if ((game === 'ringout' || game === 'hoops' || game === 'track') && reason === 'kicked') {
       players.delete(slot);
       return;
     }
@@ -175,6 +183,7 @@
     const now = performance.now();
     switch (game) {
       case 'ringout':
+        if (data.ringoutChoice && room.connected(slot)) ringoutMessage?.(player.index,data.ringoutChoice);
         if (data.ringoutActive === true) player.heartbeat = now;
         if (data.cancel === true) {
           player.reset = true;
@@ -312,6 +321,7 @@ function setupLauncher(hostedPhone) {
   function closeDirect(slot) {
     const link = directLinks.get(slot);
     if (!link) return;
+    if (game === 'hoops' && link.input) listeners?.message?.({slot, data: {hoopsCancel: true}});
     directLinks.delete(slot);
     clearTimeout(link.timer);
     link.peer?.close();
@@ -358,6 +368,10 @@ function setupLauncher(hostedPhone) {
             if (channel.readyState === 'open') {
               try { channel.send('pong'); } catch { close(); }
             }
+            return;
+          }
+          if (game === 'track' && data === 'track-cancel') {
+            listeners?.message?.({slot, data: {trackCancel: true}});
             return;
           }
           let packet;

@@ -82,3 +82,13 @@ details{margin-top:12px;color:var(--muted);line-height:1.55}summary{cursor:point
 .warmup-seat{padding:8px 10px;border-top:1px solid var(--line);min-height:53px}
 .warmup-seat b{font-size:12px}.warmup-seat small{margin-top:3px}
 @media(max-width:560px){#roster{grid-template-columns:1fr}.warmup-heading .lobby-buttons{gap:6px}}
+
+.mode-picker{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}
+.mode-picker button{text-align:left;border-radius:7px;padding:12px 14px;background:#1c1523;border:1px solid var(--line)}
+.mode-picker strong{display:block;font-size:20px;letter-spacing:-.04em}
+.mode-picker span{display:block;color:var(--muted);font:12px system-ui,sans-serif;margin-top:4px}
+.mode-picker button[aria-pressed="true"]{border-color:var(--orange);background:#49303e;box-shadow:inset 0 0 0 1px var(--orange)}
+.mode-picker button[aria-pressed="true"] strong{color:var(--orange)}
+.mode-description{color:#e4d3db;font-size:12px;min-height:1.5em;margin:8px 0}
+.draft-ability{color:#ffe096;line-height:1.4;padding-top:7px;border-top:1px solid #655066;margin-top:7px!important}
+@media(max-width:500px){.mode-picker button{padding:9px}.mode-picker span{font-size:11px}}

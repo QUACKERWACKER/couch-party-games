@@ -1,3 +1,4 @@
+import {createRingoutController} from './ringout-controller.js';
 import './profiles.js';
 import {localPeer, localDescription} from './direct-link.js';
 
@@ -14,7 +15,7 @@ const games = {
     ], hint: 'Tap Join to claim a player.',
   },
   track: {
-    title: 'Blitz Track', actions: [
+    title: 'Blitz Track', move: 'Pace / select', actions: [
       [0, 'Join'], [1, 'Turbo'], [2, 'Dirty trick'], [3, 'Event action'], [5, 'Switch team'], [9, 'Start'],
     ], hint: 'Tap Join to take a seat in the lobby.',
   },
@@ -30,6 +31,7 @@ const games = {
   },
 };
 const blitzModes = {
+  perks: [null,null,null,null,'Tap a perk to lock it for this drive. Both teams see the results.'],
   lobby: ['Boots', 'Leave', 'Helmet', null, 'Tap Team / CPU to switch sides. P1 can hold it and move the stick up or down to adjust CPUs.'],
   ready: ['Snap', null, null, 'Kick', 'Pick a play, then tap Snap.'],
   offense: ['Pass', 'Sprint', 'Dash', 'Handoff', 'Hold Pass, aim with the stick, and release to throw.'],
@@ -46,21 +48,22 @@ const blitzModes = {
 const hoopsModes = {
   join: {labels: {0: 'Join'}, hint: 'Tap Join to claim a player.'},
   lobby: {labels: {2: 'Leave team', 5: 'Switch team', 9: 'Start'}, hint: 'Choose a team, then start the draft or tip off.'},
-  warmup: {labels: {0: 'Practice shot', 1: 'Turbo', 2: 'Leave team', 5: 'Switch team', 9: 'Draft & start'},
-    hint: 'Everyone has a ball. Hold Practice shot and release in green. Tap Draft & start when ready.'},
+  warmup: {labels: {0: 'Practice shot', 1: 'Turbo', 2: 'Leave team', 5: 'Switch team', 9: 'Start'},
+    hint: 'Everyone has a ball. Hold Practice shot and release in green. Tap Start when ready.'},
   full: {labels: {}, hint: 'All six spots are taken.'},
   wait: {labels: {}, hint: 'You can join at the next lobby.'},
-  draft: {labels: {0: 'Draft player'}, move: 'Browse players', hint: 'Move the stick to browse. Check ratings on the shared screen.'},
-  draftWait: {labels: {}, hint: 'Your captain is drafting on the shared screen.'},
+  draft: {labels: {0: 'Draft', 1: 'Back', 2: 'Previous', 3: 'Next'}, hint: 'Browse on your phone. A drafts the displayed teammate.'},
+  draftWait: {labels: {}, hint: 'Your captain is choosing a teammate. Watch the shared screen.'},
   ball: {labels: {0: 'Shoot', 1: 'Turbo', 3: 'Pass', 9: 'Pause'}, hint: 'Hold Shoot, then release in green. Aim with the stick to pass.'},
   offense: {labels: {1: 'Turbo', 3: 'Call for pass', 9: 'Pause'}, hint: 'Get open and call for the ball.'},
   defense: {labels: {0: 'Block', 1: 'Turbo', 2: 'Steal', 9: 'Pause'}, hint: 'Jump to block or get close to steal.'},
   loose: {labels: {0: 'Block', 1: 'Turbo', 2: 'Steal', 9: 'Pause'}, hint: 'Follow the ball on the shared screen.'},
   freeThrow: {labels: {0: 'Free throw', 9: 'Pause'}, hint: 'Watch the shared meter. Tap Free throw in green.'},
   freeThrowWait: {labels: {9: 'Pause'}, hint: 'Free throws in progress.'},
-  recoveryPreview: {labels: {}, hint: 'Memorize the recovery order on the shared screen.'},
-  recovery: {labels: {0: 'Ice', 1: 'Tape', 3: 'Stretch'}, hint: 'Repeat the order to recover faster.'},
-  recoveryWait: {labels: {}, hint: 'Injury recovery in progress. Watch the shared screen.'},
+  recoveryBrief: {labels: {0: 'Ready', 9: 'Pause'}, hint: 'Read the recovery instructions, then tap Ready.'},
+  recoveryPreview: {labels: {9: 'Pause'}, hint: 'Memorize the recovery order on the shared screen.'},
+  recovery: {labels: {0: 'Ice', 1: 'Tape', 3: 'Stretch', 9: 'Pause'}, hint: 'Repeat the shared-screen order. Each correct tap shortens your injury.'},
+  recoveryWait: {labels: {9: 'Pause'}, hint: 'Injury recovery in progress. Watch the shared screen.'},
   halftime: {labels: {9: 'Skip halftime'}, hint: 'Watch the highlights on the shared screen.'},
   paused: {labels: {9: 'Resume'}, hint: 'The game is paused.'},
   stoppage: {labels: {9: 'Pause'}, hint: 'Watch the call or replay on the shared screen.'},
@@ -300,6 +303,9 @@ function installAction(number, label) {
 }
 
 function neutral() {
+  if (gameKey === 'track' && direct?.active && direct.channel?.readyState === 'open') {
+    try { direct.channel.send('track-cancel'); } catch {}
+  }
   send(cancellations[gameKey]);
   if(gameKey==='bedrock') send({bedrock:{aim:[0,0]}});
   for (const stick of Object.values(sticks)) {
@@ -450,8 +456,30 @@ function emphasizeAction(preferred = 0) {
 }
 
 let lastTrackCue;
+let lastTrackContext;
+let trackPlan;
 
 function updateTrack(info) {
+  if (info?.context && info.context !== lastTrackContext) {
+    lastTrackContext = info.context;
+    neutral();
+  }
+  if (!trackPlan) {
+    trackPlan = document.createElement('section');
+    trackPlan.id = 'track-plan';
+    trackPlan.setAttribute('aria-live', 'polite');
+    trackPlan.append(document.createElement('h2'), document.createElement('strong'), document.createElement('p'));
+    $('controls').append(trackPlan);
+  }
+  trackPlan.hidden = !info?.plan;
+  if (info?.plan) {
+    const [title, selected, detail] = trackPlan.children;
+    title.textContent = info.plan.title;
+    selected.textContent = info.plan.waiting ? 'Ready · ' + info.plan.selected : info.plan.selected;
+    detail.textContent = info.plan.detail;
+  }
+  $('move-label').textContent = info?.stick ?? game.move;
+  document.body.dataset.trackPhase = info?.phase ?? 'joining';
   const cue = info?.cue;
   if (cue?.id && cue.id !== lastTrackCue) {
     lastTrackCue = cue.id;
@@ -556,12 +584,12 @@ function renderBlitzBook(book) {
     blitzMenu.hidden = true;
     return;
   }
-  const defense = book.kind === 'defense';
+  const defense = book.kind === 'defense', perk = book.kind === 'perk';
   if (blitzBook?.id !== book.id || blitzBook?.kind !== book.kind || blitzBook?.options.length !== book.options.length) {
     blitzChoices.replaceChildren(...book.options.map((option,index) => {
       const button = document.createElement('button');
       button.type = 'button';
-      button.textContent = option.name;
+      button.textContent = option.name+(book.kind==='perk' ? ' · '+option.detail : '');
       button.addEventListener('click', () => {
         if (pad?.status !== 'connected' || !blitzBook) return;
         pad.send({blitzPlay: {id:blitzBook.id, kind:blitzBook.kind, index}});
@@ -573,13 +601,18 @@ function renderBlitzBook(book) {
   const selected = book.options[book.selected];
   blitzMenu.hidden = false;
   blitzMenu.dataset.kind = book.kind;
-  $('blitz-call-title').textContent = defense ? 'Defensive lineup' : 'QB play call';
+  $('blitz-call-title').textContent = defense ? 'Defensive lineup' : perk ? (book.confirmed ? 'Perk locked' : 'Pick a drive perk') : 'QB play call';
+  blitzMenu.querySelector('.blitz-preview').hidden = perk;
   blitzMenu.querySelector('.blitz-call-detail').textContent = defense ?
     selected.rushers+' rush · '+(7-selected.rushers)+' in coverage' : '';
-  blitzMenu.querySelector('.blitz-call-actions').hidden = defense;
-  blitzMenu.querySelector('[data-call-action="0"]').textContent = selected.name === 'PUNT' ? 'Punt' : 'Snap';
-  [...blitzChoices.children].forEach((button,index) => button.setAttribute('aria-pressed', String(book.selected===index)));
-  drawBlitzPreview(selected, defense);
+  blitzMenu.querySelector('.blitz-call-actions').hidden = defense || perk;
+  blitzMenu.querySelector('[data-call-action="0"]').textContent = book.snapWait ? 'Ready in '+book.snapWait+'s' : selected.name === 'PUNT' ? 'Punt' : 'Snap';
+  for (const button of blitzMenu.querySelectorAll('[data-call-action]')) button.disabled = Boolean(book.snapWait);
+  [...blitzChoices.children].forEach((button,index) => {
+    button.setAttribute('aria-pressed', String(book.selected===index));
+    button.disabled = perk && book.confirmed;
+  });
+  if (!perk) drawBlitzPreview(selected, defense);
 }
 
 function updateBlitz(info) {
@@ -595,7 +628,7 @@ function updateBlitz(info) {
     return;
   }
   const [a, b, x, y, hint] = labels;
-  const book = (mode === 'ready' || mode === 'defenseReady') && info.playbook?.kind ? info.playbook : null;
+  const book = (mode === 'ready' || mode === 'defenseReady' || mode === 'perks') && info.playbook?.kind ? info.playbook : null;
   const selected = book?.options[book.selected]?.name;
   updateActionLabels({
     0: selected === 'PUNT' ? 'Punt' : a, 1: b, 2: x, 3: y,
@@ -609,10 +642,17 @@ function updateBlitz(info) {
   $('hint').textContent = book ? '' : mode === 'lobby' && !info.host ? 'Switch teams or customize your boots and helmet.' : hint;
 }
 
+let ringoutController;
 function updateRingout(info) {
-  const buttons = info?.buttons ?? {0: 'Join'};
+  ringoutController ||= createRingoutController({send,neutral});
+  ringoutController.update(info);
+  const phase=info?.phase;
+  if (phase && phase!==updateRingout.phase) { neutral(); updateRingout.phase=phase; }
+
+  if(/^#[0-9a-f]{6}$/i.test(info?.accent || '')) document.body.style.setProperty('--accent',info.accent);
+  const buttons = info?.buttons ?? {};
   const aim = sticks.aim;
-  $('aim').hidden = buttons[2] !== 'Push';
+  $('aim').hidden = !(info?.active || buttons[2] === 'Push' || buttons[2] === 'Last Word');
   if ($('aim').hidden && (aim.x || aim.y || aim.pointer !== null)) {
     aim.pointer = null;
     aim.keys.clear();
@@ -621,24 +661,112 @@ function updateRingout(info) {
   }
   updateActionLabels(buttons);
   emphasizeAction(info?.primary);
-  $('player').textContent = info?.player || 'Phone ' + pad.slot;
-  $('hint').textContent = info?.hint ?? game.hint;
+  $('player').textContent = (info?.player || 'Phone ' + pad.slot)+(info?.team?' · '+info.team:'');
+  $('hint').textContent = info?.hint ?? 'Connecting to the arena…';
+}
+
+let hoopsPanel, hoopsPowerStatus;
+
+function installHoopsPanels() {
+  if (hoopsPanel) return;
+  hoopsPanel = document.createElement('aside');
+  hoopsPanel.id = 'hoops-break-panel';
+  hoopsPanel.setAttribute('aria-label', 'Your basketball instructions');
+  hoopsPanel.hidden = true;
+  $('controls').append(hoopsPanel);
+  hoopsPowerStatus = document.createElement('span');
+  hoopsPowerStatus.id = 'hoops-power-status';
+  hoopsPowerStatus.hidden = true;
+  $('utility-buttons').append(hoopsPowerStatus);
+  $('hint').setAttribute('role', 'status');
+}
+
+function renderHoopsPanel(info, view) {
+  const prospect = info?.prospect;
+  const phase = info?.mode;
+  let title, detail;
+  if (info?.result) {
+    title = `${info.player} · final stats`;
+    detail = `${info.result.points} points · ${info.result.rebounds} rebounds · ${info.result.assists} assists. Full stats are on the shared screen.`;
+  } else if (prospect) {
+    title = `${prospect.name} · ${prospect.position}/${prospect.total}`;
+    detail = `${prospect.role}. ${prospect.ability.name}: ${prospect.ability.text}`;
+  } else if (phase === 'recoveryBrief') {
+    title = 'Quick recovery';
+    detail = 'Memorize three treatments on the shared screen. Repeat them here to shorten your injury. Tap Ready when you understand.';
+  } else if (phase === 'recoveryPreview') {
+    title = 'Look at the shared screen';
+    detail = 'Memorize the treatment order. Your phone buttons appear when it is time to repeat it.';
+  } else if (phase === 'recovery') {
+    title = `Recovery · ${info.progress}/3`;
+    detail = `${info.seconds}s left. A = Ice. B = Tape. Y = Stretch. A wrong tap costs time.`;
+  } else if (phase === 'recoveryWait') {
+    title = 'Injury timeout';
+    detail = 'Your teammate is recovering. Play resumes automatically.';
+  } else if (phase === 'draftWait') {
+    title = 'Your captain is choosing';
+    detail = info?.ability ? `Your power is ${info.ability.name}. ${info.ability.text}` : view.hint;
+  } else if (phase === 'freeThrow') {
+    title = info.getReady ? `Get ready · ${info.getReady}` : 'Watch the shared meter';
+    detail = 'Tap Free throw when the shared-screen marker reaches green. The game judges your timing.';
+  } else if (phase === 'freeThrowWait') {
+    title = 'At the free-throw line';
+    detail = 'Watch the shared screen for the result.';
+  } else if (phase === 'paused' && info?.ability) {
+    title = info.ability.name;
+    detail = `${info.ability.text} Use its button below the center controls. Tap Resume when ready.`;
+  }
+  hoopsPanel.hidden = !title;
+  if (!title) return false;
+  const key = JSON.stringify([title, detail, prospect?.ratings]);
+  if (hoopsPanel.dataset.content !== key) {
+    const heading = document.createElement('h2');
+    heading.textContent = title;
+    const text = document.createElement('p');
+    text.textContent = detail;
+    const nodes = [heading, text];
+    if (prospect) {
+      const ratings = document.createElement('dl');
+      ['Speed', 'Shooting', 'Finishing', 'Defense', 'Passing'].forEach((label, i) => {
+        const term = document.createElement('dt');
+        term.textContent = label;
+        const value = document.createElement('dd');
+        value.textContent = prospect.ratings[i];
+        ratings.append(term, value);
+      });
+      nodes.push(ratings);
+    }
+    hoopsPanel.replaceChildren(...nodes);
+    hoopsPanel.dataset.content = key;
+  }
+  return true;
 }
 
 function updateHoops(info) {
+  installHoopsPanels();
   const view = hoopsModes[info?.mode] || hoopsModes.join;
-  updateActionLabels(view.labels);
-  const recovery = view === hoopsModes.recovery;
-  const recoveryScreen = recovery || view === hoopsModes.recoveryPreview || view === hoopsModes.recoveryWait;
-  $('controls').classList.toggle('hoops-recovery', recoveryScreen);
-  $('movement').hidden = recoveryScreen;
-  if (recoveryScreen) {
+  const labels = {...view.labels};
+  if (info?.ruleset) {
+    labels[9] = info.final ? 'Rematch' : info.ruleset === 'chaos' ? 'Draft & start' : 'Tip off';
+    if (info.final) labels[3] = 'Choose mode';
+    else if (info.canSelectMode) labels[3] = info.ruleset === 'basic' ? 'Choose Chaos' : 'Choose Basic';
+  }
+  const powerAvailable = info?.ability?.ready && ['ball', 'offense', 'defense', 'loose'].includes(info.mode);
+  if (powerAvailable && !info.ability.seconds) labels[5] = info.ability.name;
+  hoopsPowerStatus.hidden = !powerAvailable || !info.ability.seconds;
+  if (!hoopsPowerStatus.hidden) hoopsPowerStatus.textContent = `${info.ability.name} · ${info.ability.seconds}s`;
+  updateActionLabels(labels);
+  $('controls').classList.remove('hoops-recovery');
+  $('movement').hidden = renderHoopsPanel(info, view);
+  if (info?.mode?.startsWith('recovery')) {
     for (const action of actions.values()) action.element.classList.remove('primary');
   } else emphasizeAction(view === hoopsModes.lobby ? 9 : 0);
   $('move-label').textContent = view.move || game.move;
   $('player').textContent = info?.player || 'Phone ' + pad.slot;
   $('status').textContent = info?.team || 'Connected';
-  $('hint').textContent = recovery ? `${view.hint} ${info.progress}/3 complete.` : view.hint;
+  $('status').style.color = info?.team === 'HOT DOGS' ? '#ff826f' : info?.team === 'TURBO TOADS' ? '#72e6de' : '';
+  if (/^#[0-9a-f]{6}$/i.test(info?.accent)) document.body.style.setProperty('--accent', info.accent);
+  $('hint').textContent = info?.notice || view.hint;
 }
 
 async function openDirectLink() {
@@ -711,9 +839,11 @@ async function connect() {
       if (status !== 'connected') direct?.close();
       roomStatus(status);
       if(status!=='connected') bedrockController?.reset();
+      if(status!=='connected') ringoutController?.reset();
       if (status === 'connected') openDirectLink();
     });
     pad.on('message', data => {
+      if(gameKey==='ringout' && !document.hidden && Number.isFinite(data?.ringoutFeedback)) navigator.vibrate?.(Math.max(0,Math.min(80,data.ringoutFeedback)));
       const answer = data?.directAnswer;
       if (direct && answer?.id === direct.id && typeof answer.sdp === 'string') direct.answer(answer.sdp);
       if (typeof data?.inputPong === 'number') {
@@ -871,7 +1001,7 @@ if (lobby && validCode) {
   const surface = document.querySelector('main');
   for (const name of ['contextmenu', 'dragstart', 'selectstart']) {
     surface.addEventListener(name, event => {
-      if (!event.target.closest('select')) event.preventDefault();
+      if (!event.target.closest('input, textarea, select, [contenteditable]')) event.preventDefault();
     });
   }
 }

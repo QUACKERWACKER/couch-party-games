@@ -3,23 +3,9 @@
 const get = id => document.getElementById(id);
 const ctx = get('field').getContext('2d');
 const half = 18;
-const controls = [
-  ['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyT'],
-  ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyK', 'KeyL', 'Semicolon', 'Slash'],
-];
-const trickBindings = new Map();
-const defaultTrick = new Map([[-2,'KeyY'],[-1,'Period']]);
-let bindingSlot = null;
-let bindingController = false;
-const controllerTrickButtons = [4,5,6,7,8,10,11];
-try {
-  for (const [slot,key] of JSON.parse(localStorage.getItem('ringout-trick') || '[]')) trickBindings.set(slot,key);
-} catch {}
-const gameKeys = new Set([...controls.flat(), 'Escape', 'Enter','KeyY','Period']);
-const keys = new Set();
 const slots = [];
 const joinMotion = new Set();
-const keyboardSlots = new Map([['KeyW', -2], ['ArrowUp', -1]]);
+
 const isLobby = () => state === 'menu' || state === 'match';
 const minimumPlayers = (options = rules) => options.coop ? 1 : 2;
 const previous = new Map();
@@ -242,7 +228,7 @@ function resetPlayers(randomize = false, walls = []) {
     occupied.push(point);
     const facing = Math.atan2(center.y-y,center.x-x);
     return {
-    color: palette[lookFor(i).color], look: lookFor(i),
+    color: playerAccent(i), look: lookFor(i),
     x, y, team: rules.teams ? i % 2 : endless ? 0 : null, stats: statsFor(i), saved: false,
     vx: 0, vy: 0, fx: Math.cos(facing), fy: Math.sin(facing),
     charge: 0, slide: 0, out: false, brain: 0,
@@ -299,8 +285,8 @@ function show(next, eyebrow, title, subtitle, action) {
   get('shortcut').hidden = !action || setup;
   if (next === 'round') get('shortcut').textContent = 'Get ready…';
   else if (next === 'match') updateResultsLock();
-  else if (isLobby()) get('shortcut').textContent = editingMode ? 'A / × Select · B / ○ Back' : 'A / × Select';
-  else if (next === 'paused') get('shortcut').textContent = 'Stick / D-pad to browse · A / × to select · Start to resume';
+  else if (isLobby()) get('shortcut').textContent = editingMode ? 'A Select · B Back' : 'A Select';
+  else if (next === 'paused') get('shortcut').textContent = 'Use your phone to browse and select · tap Resume';
 }
 
 function scoreboard() {
@@ -318,7 +304,7 @@ function scoreboard() {
   strip.classList.toggle('compact', humanCount >= 5);
   strip.replaceChildren(...Array.from({length:humanCount}, (_, i) => {
     const entry = gameElement('span', {className: 'score-entry'});
-    entry.style.setProperty('--player-color', palette[lookFor(i).color]);
+    entry.style.setProperty('--player-color', playerAccent(i));
     entry.dataset.player = i;
     if (!endless) entry.tabIndex = 0;
     const wins = rules.teams ? teamScore[i % 2] : score[i] || 0;
@@ -332,7 +318,7 @@ function scoreboard() {
       badge.setAttribute('aria-hidden', 'true');
       drawCharacter(badge.getContext('2d'), lookFor(i), 0, 0, 64);
       const identity = gameElement('span', {className: 'score-identity'});
-      identity.append(gameElement('strong', {text: 'Player ' + (i + 1)}),
+      identity.append(gameElement('strong', {text: deviceLabel(slots[i])}),
         gameElement('small', {text: rules.teams ? 'Team ' + teamNames[i % 2] : deviceLabel(slots[i])}));
       entry.append(badge, identity);
       if (metric) {
@@ -610,20 +596,17 @@ function nextDraft() {
   get('draft').classList.toggle('shared-pool', Boolean(sharedDraft));
   selected = 0;
   draftDisconnectedAt = null;
-  show('draft', (sharedDraft ? 'PASS ' + sharedDraft.pass + ' / ' + rules.cardsPerPlayer + ' · ' : rules.divergence ? buildPhaseNames[owned.length]+' · ' : startingDraft ? 'STARTER · ' : endless ? 'WAVE ' + wave + ' CLEARED · ' : '') + 'PLAYER ' + (player + 1) + ' PICKS', 'CHOOSE A CARD',
-    (slots[player] >= 0 ? 'Use your stick or D-pad · A / × to pick'
-      : slots[player] === -2 ? 'Click a card, or browse with A / D and pick with F' : 'Click a card, or browse with ← / → and pick with K') + (!sharedDraft && builds[player].length >= 8 ? ' · Replaces your oldest card' : ''));
+  show('draft', (sharedDraft ? 'PASS ' + sharedDraft.pass + ' / ' + rules.cardsPerPlayer + ' · ' : rules.divergence ? buildPhaseNames[owned.length]+' · ' : startingDraft ? 'STARTER · ' : endless ? 'WAVE ' + wave + ' CLEARED · ' : '') + deviceLabel(slots[player]) + ' PICKS', 'CHOOSE A CARD',
+    'Choose an upgrade on your phone. The arena waits for your pick.');
   const build = get('draftBuild');
   build.hidden = false;
   const trial = get('tryTrick');
   trial.hidden = !(rules.divergence && startingDraft);
-  trial.textContent = slots[player]>=0 ? 'Try Trick · RB / R1' :
-    'Try Trick · '+(trickBindings.get(slots[player]) || defaultTrick.get(slots[player]) || '').replace('Key','').replace('Period','.');
-
-  build.textContent = owned.length ? 'Your build · '+owned.map(card=>card[0]).join(' · ') : 'Choose your first card';
-  const spotlight = get('draftSpotlight');
+  trial.textContent = 'Try Trick on your phone';
+  build.textContent = owned.length ? 'Your build · '+owned.map(card=>card[0]).join(' · ') : 'Choose your first upgrade';
+  const spotlight=get('draftSpotlight');
   const look = lookFor(player);
-  spotlight.style.setProperty('--fighter-color',palette[look.color]);
+  spotlight.style.setProperty('--fighter-color',playerAccent(player));
   const entrance = gameElement('div', {className: 'draft-fighter'});
   const body = gameElement('i', {className: 'draft-body'});
   const accessory = gameElement('i', {className: 'draft-accessory'});
@@ -631,14 +614,8 @@ function nextDraft() {
   placeSprite(accessory,look.accessory,10);
   entrance.append(body,accessory);
   spotlight.replaceChildren(entrance);
-  const slot = slots[player];
   get('draft').replaceChildren(...choices.map(([name, rarity, description, stats],i) => {
-    const button = document.createElement(slot < 0 ? 'button' : 'article');
-    if (slot < 0) {
-      button.type = 'button';
-      button.addEventListener('focus', () => highlightCard(i));
-      button.addEventListener('click', () => pickCard(i,slot));
-    }
+    const button = document.createElement('article');
     button.className = 'card ' + rarity.toLowerCase();
     button.style.setProperty('--deal-delay',Math.min(i,5)*38+'ms');
     const tier = gameElement('small', {text: rarity + (isRadicalCard(choices[i]) ? ' · Radical' : '')});
@@ -716,7 +693,7 @@ function setSetup(active) {
   if (active) readyPlayers.clear();
   obstacles = [];
   show('menu', '', active ? 'Player setup' : 'Choose mode',
-    active ? 'Press any controller button or move the stick to join. Keyboard: W or ↑.' : '',
+    active ? 'Join on your phone. Customize your fighter, then tap Ready. Up to six players.' : '',
     active ? '' : 'Start match');
   updateLobby();
 }
@@ -892,7 +869,7 @@ function updateLobby() {
     if (!setup) return remove;
     const row = gameElement('div', {className: 'look-row'});
     row.setAttribute('aria-label', 'Customize player ' + (i + 1));
-    const heading = gameElement('strong', {text: 'Player ' + (i + 1) + ' · ' + deviceLabel(slot)});
+    const heading = gameElement('strong', {text: deviceLabel(slot)});
     const preview = gameElement('div', {className: 'setup-preview'});
     const emote = gameElement('canvas', {className: 'setup-emote'});
     emote.width = emote.height = 146;
@@ -920,20 +897,19 @@ function updateLobby() {
 }
 
 function deviceLabel(slot) {
-  if (slot === -2) return 'WASD';
-  if (slot === -1) return 'Arrow keys';
-  return window.couchJoinstick?.label(slot) ?? ('Controller ' + (slot + 1));
+  return window.couchJoinstick?.label(slot) || 'Player ' + (slots.indexOf(slot)+1);
+}
+function playerAccent(i) {
+  return window.couchJoinstick?.profile?.(slots[i])?.accent || palette[lookFor(i).color];
 }
 
 function join(slot) {
-  if (slots.includes(slot)) return false;
+  if (slots.includes(slot) || slots.length>=6 || !window.couchJoinstick?.reserved(slot)) return false;
   if (!looks.has(slot)) {
     const saved = loadLook(slot);
     if (saved) looks.set(slot, saved);
   }
   slots.push(slot);
-  // Put the two named keyboard layouts first, in their displayed order.
-  if (slot < 0) slots.sort((a, b) => a < 0 || b < 0 ? a < 0 && b < 0 ? a - b : a < 0 ? -1 : 1 : 0);
   if (!setup) setSetup(true);
   else updateLobby();
   return true;
@@ -942,95 +918,17 @@ function join(slot) {
 get('action').addEventListener('click', primary);
 get('tryTrick').addEventListener('click',previewBuildTrick);
 get('pause').addEventListener('click', togglePause);
-get('bindTrickPad').addEventListener('click',()=>{bindingController=true;bindingSlot=null;get('trickBindStatus').textContent='On a controller, press a shoulder, trigger, Select, or stick button.';});
-get('bindTrickW').addEventListener('click',()=>{bindingController=false;bindingSlot=-2;get('trickBindStatus').textContent='Press a free key for WASD Trick.';});
-get('bindTrickArrows').addEventListener('click',()=>{bindingController=false;bindingSlot=-1;get('trickBindStatus').textContent='Press a free key for arrow-key Trick.';});
-window.addEventListener('keydown', event => {
-  if (bindingController && event.code==='Escape') {
-    bindingController=false;get('trickBindStatus').textContent='Binding canceled.';return;
-  }
-  if (bindingSlot!==null) {
-    if (event.code==='Escape') {bindingSlot=null;get('trickBindStatus').textContent='Binding canceled.';return;}
-    const other=bindingSlot===-2?-1:-2;
-    if (controls.flat().includes(event.code) || event.code===(trickBindings.get(other) || defaultTrick.get(other)) ||
-        !/^(Key[A-Z]|Digit[0-9]|Period|Comma|BracketLeft|BracketRight)$/.test(event.code) || event.code==='KeyR') return;
-    event.preventDefault();
-    trickBindings.set(bindingSlot,event.code);
-    bindingSlot=null;
-    try {localStorage.setItem('ringout-trick',JSON.stringify([...trickBindings]));} catch {}
-    get('trickBindStatus').textContent='Trick bound to '+event.key+'.';
-    return;
-  }
-  if (state === 'menu' && !setup && editingMode && event.code === 'Escape') {
-    event.preventDefault();
-    leaveModeSettings();
-    return;
-  }
-  if (state === 'menu' && !setup && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.code)) {
-    event.preventDefault();
-    navigateMenu({left:event.code==='ArrowLeft',right:event.code==='ArrowRight',
-      up:event.code==='ArrowUp',down:event.code==='ArrowDown'});
-    return;
-  }
-  if (state === 'round' && !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey &&
-      (event.key?.length === 1 || gameKeys.has(event.code))) {
-    event.preventDefault();
-    primary();
-    return;
-  }
-  if (state === 'kineticDraft') {
-    if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
-    const i=slots.findIndex(slot=>slot<0 && controls[slot===-2?0:1].slice(2,5).includes(event.code));
-    if (i>=0) {
-      event.preventDefault();
-      const [, , left,right,confirm]=controls[slots[i]===-2?0:1];
-      if (event.code===confirm) kineticPick(i,kineticDraft?.picks[i]?.selected);
-      else kineticBrowse(i,event.code===right ? 1 : event.code===left ? -1 : 0);
-    }
-    return;
-  }
-  if (state === 'draft') {
-    if (gameKeys.has(event.code) || event.code === 'Space') event.preventDefault();
-    if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
-    const slot = slots[draftQueue[0]];
-    if (slot !== -2 && slot !== -1) return;
-    const [, , left, right, confirm] = controls[slot === -2 ? 0 : 1];
-    if (event.code === left) highlightCard(selected - 1);
-    if (event.code === right) highlightCard(selected + 1);
-    if (startingDraft && event.code === (trickBindings.get(slot) || defaultTrick.get(slot))) previewBuildTrick();
-    if (event.code === confirm) pickCard(selected, slot);
-    return;
-  }
-  if (setup && isLobby() && ['KeyR', 'Slash'].includes(event.code)) {
-    event.preventDefault();
-    if (!event.repeat) toggleReady(event.code === 'KeyR' ? -2 : -1);
-    return;
-  }
-  if (!gameKeys.has(event.code)) return;
-  if (event.code === 'Enter' && event.target instanceof HTMLButtonElement && !event.target.hidden &&
-      !event.target.disabled && event.target.getClientRects().length) return;
-  event.preventDefault();
-  keys.add(event.code);
-  if (event.repeat) return;
-  if (state === 'menu' && !editingMode && keyboardSlots.has(event.code)) join(keyboardSlots.get(event.code));
-  if (event.code === 'Enter') primary();
-  if (event.code === 'Escape') togglePause();
-});
-window.addEventListener('keyup', event => keys.delete(event.code));
-window.addEventListener('blur', () => {
-  keys.clear();
-  if (state === 'playing') togglePause();
-});
+window.addEventListener('blur', () => { if (state === 'playing') togglePause(); });
 
-function gamepads() {
-  const pads = gameControllerInputs();
+function phoneInputs() {
+  const pads = (window.couchJoinstick?.sample() || []).filter(pad=>pad.phone);
   connectedPads = new Map(pads.map(pad => [pad.index, pad]));
   for (const index of joinMotion) {
     if (!connectedPads.has(index)) joinMotion.delete(index);
   }
   for (const slot of previous.keys()) if (slot >= 0 && !connectedPads.has(slot)) previous.delete(slot);
   if (state === 'menu') {
-    const available = slots.filter(slot => slot < 0 || connectedPads.has(slot) || window.couchJoinstick?.reserved(slot));
+    const available = slots.filter(slot => connectedPads.has(slot) || window.couchJoinstick?.reserved(slot));
     if (available.length !== slots.length) {
       for (const slot of slots) {
         if (available.includes(slot)) continue;
@@ -1058,33 +956,28 @@ function gamepads() {
 function readInput(i, pad) {
   const slot = slots[i];
   const prior = previous.get(slot);
-  const [up, down, left, right, dash, push, dodge, emote] = controls[slot === -2 ? 0 : slot === -1 ? 1 : -1] || [];
-  const button = n => Number(Boolean(pad?.buttons[n]?.pressed));
+  const context=state+':'+setup+':'+editingMode+':'+draftQueue[0];
+  const rawDown=pad?.buttons.some(button=>button.pressed);
+  const blocked=pad?.inputReset || prior?.context!==context || (prior?.blocked && rawDown);
+  const button = n => Number(!blocked && Boolean(pad?.buttons[n]?.pressed));
   let x = (pad?.axes[0] || 0);
   let y = (pad?.axes[1] || 0);
   const length = Math.hypot(x, y);
   const scale = length > .19 ? (Math.min(1, length) - .19) / (.81 * length) : 0;
-  x = x * scale + button(15) - button(14) + Number(keys.has(right)) - Number(keys.has(left));
-  y = y * scale + button(13) - button(12) + Number(keys.has(down)) - Number(keys.has(up));
+  x = x * scale + button(15) - button(14);
+  y = y * scale + button(13) - button(12);
   const limit = Math.max(1, Math.hypot(x, y));
   const padButtons = Array.from(pad?.buttons || [], b => Boolean(b.pressed));
-  if (bindingController && pad && !pad.phone) {
-    const choice=controllerTrickButtons.find(n=>padButtons[n] && !prior?.padButtons[n]);
-    if (choice!==undefined) {
-      trickBindings.set(slot,choice);
-      bindingController=false;
-      try {localStorage.setItem('ringout-trick',JSON.stringify([...trickBindings]));} catch {}
-      get('trickBindStatus').textContent='Controller Trick updated.';
-    }
-  }
+  if(blocked) x=y=0;
   const held = { any: padButtons.some((down, index) => down && !prior?.padButtons[index]),
-    trick: keys.has(trickBindings.get(slot) || defaultTrick.get(slot)) || button(!pad?.phone && typeof trickBindings.get(slot)==='number' ? trickBindings.get(slot) : 5), accessory: button(1), emote: keys.has(emote) || button(3), dodge: keys.has(dodge) || button(1), up: y < -.55, down: y > .55, dash: keys.has(dash) || button(0), push: keys.has(push) || button(2), start: button(9), left: x < -.55, right: x > .55 };
+    trick: button(5) || (rules.divergence && button(3)), accessory: button(1), emote: !rules.divergence && button(3), dodge: button(1),
+    up:y<-.55,down:y>.55,dash:button(0),push:button(2),start:button(9),left:x<-.55,right:x>.55 };
   const aimX=pad?.axes[2] || 0, aimY=pad?.axes[3] || 0;
   const dedicated=Math.hypot(aimX,aimY)>.24;
-  const input = { x: x / limit, y: y / limit,aimX:dedicated?aimX:undefined,aimY:dedicated?aimY:undefined, charging: Boolean(held.push), inputLost: slot >= 0 && (!pad || pad.inputReset), dashHeld: Boolean(held.dash) };
+  const input = { x: x / limit, y: y / limit,aimX:dedicated && !blocked?aimX:undefined,aimY:dedicated && !blocked?aimY:undefined, charging: Boolean(held.push), inputLost: !pad || blocked, dashHeld: Boolean(held.dash) };
   for (const name of Object.keys(held)) input[name] = held[name] && !prior?.[name];
-  input.any = held.any;
-  previous.set(slot, {...held, padButtons});
+  input.any = !blocked && held.any;
+  previous.set(slot, {...held, padButtons,context,blocked:blocked && rawDown});
   return input;
 }
 
@@ -1459,20 +1352,12 @@ let hapticsEnabled = true;
 get('haptics').addEventListener('click', () => {
   hapticsEnabled = !hapticsEnabled;
   get('haptics').setAttribute('aria-pressed', hapticsEnabled);
-  get('haptics').textContent = 'Controller vibration · ' + (hapticsEnabled ? 'On' : 'Off');
+  get('haptics').textContent = 'Phone feedback · ' + (hapticsEnabled ? 'On' : 'Off');
 });
 
-function rumble(player, duration, strong, weak = strong) {
-  if (!hapticsEnabled) return;
-  const slot = slots[players.indexOf(player)];
-  const actuator = connectedPads.get(slot)?.vibrationActuator;
-  if (!actuator?.playEffect) return;
-  try {
-    const effect = actuator.effects?.includes('dual-rumble') === false ? null : 'dual-rumble';
-    if (effect) Promise.resolve(actuator.playEffect(effect, {duration, strongMagnitude:strong, weakMagnitude:weak})).catch(() => {});
-  } catch {
-    // Some browsers expose an actuator even when vibration is unavailable.
-  }
+function rumble(player, duration, strong) {
+  if (!hapticsEnabled || strong<.35) return;
+  window.couchJoinstick?.feedback?.(slots[players.indexOf(player)],Math.min(80,duration));
 }
 
 function blockPush(target, source, x, y, hit = {}) {
@@ -2558,7 +2443,7 @@ function resultCard(i, rank, award) {
   for (const [label, value] of values) {
     numbers.append(gameElement('dt', {text: label}), gameElement('dd', {text: value}));
   }
-  card.append(stage, gameElement('strong', {text: 'Player ' + (i + 1)}),
+  card.append(stage, gameElement('strong', {text: deviceLabel(slots[i])}),
     gameElement('span', {className: 'result-nickname', text: award.name}),
     gameElement('p', {className: 'result-reason', text: award.line}), numbers);
   if ((roundsMode || endless || rules.preDraft) && builds[i]?.length) {
@@ -2621,7 +2506,7 @@ function showResults(winner, chapterCleared = false) {
   }
   resetRoundCards();
   show('match', rules.story ? storyChapter().title : endless ? 'CO-OP RUN COMPLETE' : 'VERSUS MATCH COMPLETE',
-    rules.story ? chapterCleared ? 'Chapter cleared' : 'Chapter failed' : endless ? knockouts + ' CPU KOs' : rules.teams ? teamNames[winner] + ' wins' : 'PLAYER ' + (winner + 1) + ' WINS',
+    rules.story ? chapterCleared ? 'Chapter cleared' : 'Chapter failed' : endless ? knockouts + ' CPU KOs' : rules.teams ? teamNames[winner] + ' wins' : deviceLabel(slots[winner]) + ' WINS',
     (rules.story ? chapterCleared ? storyChapter().ending : 'Encounter ' + wave + ' of 3 · ' + knockouts + ' KOs' : endless ? 'Wave ' + wave + ' · Best for these rules: wave ' + record.wave + ', ' + record.knockouts + ' KOs' : rules.teams ? teamScore.join(' – ') : objective ? extraModes[rules.objective].name : rounds + ' scored rounds') + ' · ' + duration + ' played',
     rules.story ? 'Replay chapter' : 'Play again');
   const order = matchStats.map((_, i) => i);
@@ -2666,7 +2551,7 @@ function updateResultsLock() {
   get('action').disabled = remaining > 0 || !canStart(rules);
   get('resultsLobby').disabled = remaining > 0;
   const label = remaining ? 'Continue in ' + remaining + 's'
-    : 'Stick / D-pad to browse · A / × to select';
+    : 'Use your phone to browse and select';
   updateGameText(get('shortcut'), label);
 }
 
@@ -2719,7 +2604,7 @@ function finishRound(winner, tiebreak = false) {
     return;
   }
   show('round', tiebreak ? 'TIEBREAK · CLOSEST TO CENTER' : 'RINGOUT',
-    'PLAYER ' + (winner + 1) + ' WINS', humanCount === 2 ? 'Score ' + score.join(' – ') : 'Player ' + (winner + 1) + ' · ' + score[winner] + ' of ' + winsNeeded() + ' wins', 'Next round');
+    deviceLabel(slots[winner]) + ' WINS', humanCount === 2 ? 'Score ' + score.join(' – ') : deviceLabel(slots[winner]) + ' · ' + score[winner] + ' of ' + winsNeeded() + ' wins', 'Next round');
 }
 
 const reduceCountdownMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
@@ -3154,6 +3039,9 @@ function draw() {
       ctx.fillStyle = j ? '#dafa74' : p.color;
       ctx.fillRect(-18 + j * 19, 26, 17 * Math.min(1, Math.max(0, fraction)), 3);
     }
+    ctx.strokeStyle=playerAccent(i);
+    ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(0,0,(p.radius || half)+3,0,Math.PI*2);ctx.stroke();
     ctx.restore();
   }
   ctx.restore();
@@ -3172,7 +3060,7 @@ function showStats(i, left, top) {
   const percent = value => (value >= 0 ? '+' : '−') + Math.abs(value) + '%';
   const cards = (builds[i] || []).map(card => card[0]);
   tip.textContent = [
-    'PLAYER ' + (i + 1) + (p.out ? ' · OUT' : ''),
+    deviceLabel(slots[i]) + (p.out ? ' · OUT' : ''),
     'Move ' + percent(stat('speed', .65)) + ' · Charge ' + percent(stat('charge')),
     'Push force ' + percent(stat('force')) + ' · Range ' + percent(stat('range')),
     'Incoming knockback ' + percent(-stat('guard', .65)),
@@ -3217,6 +3105,11 @@ function menuRows() {
 }
 
 function navigateMenu(input) {
+  if(input.accessory && state==='menu') {
+    if(editingMode) leaveModeSettings();
+    else document.querySelector('a[href="../"]')?.click();
+    return;
+  }
   if (input.accessory && state === 'menu' && editingMode) {
     leaveModeSettings();
     return;
@@ -3253,37 +3146,54 @@ function drawLobbyEmotes(now) {
   });
 }
 
+function phoneDraftView(i) {
+  const pick=kineticDraft?.picks[i];
+  const cards=state==='kineticDraft' ? pick?.offers : draftQueue[0]===i && draftHandoffAt===null ? choices : null;
+  if (!cards || (state==='kineticDraft' && pick.done)) return null;
+  const token=state+':'+i+':'+cards.map(card=>card[0]).join('|')+':'+score.join(',')+':'+wave;
+  return {token,cards:cards.map(card=>({name:card[0],text:card[2]})),
+    selected:state==='kineticDraft'?pick.selected:selected,
+    unlocked:performance.now()>=(state==='kineticDraft'?kineticDraft.lockedUntil:transitionTime),
+    owned:(builds[i] || []).map(card=>card[0])};
+}
+function ringoutPhoneCommand(index,data) {
+  const i=slots.indexOf(index);
+  if(i<0 || !connectedPads.has(index) || !data) return;
+  const view=phoneDraftView(i);
+  if(!view || data.token!==view.token || !view.unlocked || !Number.isInteger(data.pick) || !view.cards[data.pick]) return;
+  if(state==='kineticDraft') kineticPick(i,data.pick);
+  else if(state==='draft') pickCard(data.pick,index);
+}
+window.couchJoinstick?.onRingoutMessage?.(ringoutPhoneCommand);
 function describeRingoutPhones() {
-  const descriptions = {};
-  for (const [slot] of connectedPads) {
-    if (!window.couchJoinstick.label(slot)) continue;
-    const i = slots.indexOf(slot);
-    const player = i < 0 ? '' : window.couchJoinstick?.profile?.(slot)?.name || 'Player ' + (i + 1);
-    const describe = (buttons, primary, hint) => { descriptions[slot] = {player,buttons,primary,hint}; };
-    if (i < 0) {
-      describe(state === 'menu' && !editingMode ? {0:'Join'} : {}, 0,
-        state === 'menu' && !editingMode ? 'Tap Join to claim a fighter.' : 'You can join from the lobby.');
-    } else if (isLobby() && setup) {
-      describe({0:'Select',1:'Next tab',9:readyPlayers.has(slot)?'Unready':'Ready'},9,'Move to browse your fighter’s options.');
-    } else if (state === 'kineticDraft' || state === 'draft') {
-      const card = state === 'kineticDraft'
-        ? kineticDraft?.picks[i]?.offers[kineticDraft?.picks[i]?.selected]
-        : draftQueue[0] === i && draftHandoffAt === null ? choices[selected] : null;
-      const ready = state === 'kineticDraft' && kineticDraft?.picks[i]?.done;
-      const unlocked = performance.now() >= (state === 'kineticDraft' ? kineticDraft.lockedUntil : transitionTime);
-      describe(card && !ready && unlocked ? (startingDraft && rules.divergence ? {0:'Pick',5:'Try Trick'} : {0:'Pick'}) : {},0,
-        card && !ready ? card[0] + ' · ' + card[2] : 'Waiting for upgrades. Watch the shared screen.');
-    } else if (state === 'countdown') {
-      describe({},0,'Get ready. Watch the arena.');
-    } else if (state === 'playing') {
-      const trick = rules.divergence && builds[i]?.[0];
-      describe({0:'Dash',1:'Dodge / parry',2:'Push',3:'Emote',...(trick ? {5:'Trick'} : {}),9:'Pause'},2,
-        'Hold Push to charge. Aim with the right stick, then release.');
-    } else if (state === 'round') {
-      describe({0:'Continue'},0,'Look at the shared screen for the next round.');
-    } else {
-      describe({0:'Select',...(state === 'paused' ? {9:'Resume'} : {})},0,'Use Move to browse the shared screen.');
-    }
+  const descriptions={};
+  const describe=(slot,buttons,hint,extra={})=>{
+    const i=slots.indexOf(slot);
+    descriptions[slot]={player:deviceLabel(slot),buttons,hint,primary:2,phase:state,
+      accent:i>=0?playerAccent(i):window.couchJoinstick?.profile?.(slot)?.accent,
+      team:i>=0 && rules.teams ? teamNames[i%2] : rules.coop?'Co-op':'',...extra};
+  };
+  for(const [slot] of connectedPads) {
+    const i=slots.indexOf(slot);
+    if(i<0) {
+      const canJoin=state==='menu' && !editingMode && slots.length<6;
+      describe(slot,canJoin?{0:'Join'}:{},slots.length>=6?'All six seats are taken.':'Join from the player setup screen.');
+    } else if(setup && isLobby()) {
+      describe(slot,{0:'Select',1:'Next tab',9:readyPlayers.has(slot)?'Unready':'Ready'},
+        'Look at the shared screen. Move to choose shape, accessory and emote. Your profile supplies your name and outline color.');
+    } else if(state==='kineticDraft' || state==='draft') {
+      const draft=phoneDraftView(i);
+      describe(slot,draft?.unlocked?{0:'Pick',...(startingDraft && rules.divergence?{3:'Try Trick'}:{})}:{},
+        draft?'Look at your phone. Choose one upgrade, then return to the arena.':'Pick accepted or waiting for your turn. Watch the shared screen.',{draft});
+    } else if(state==='playing') {
+      const p=players[i];
+      const ghost=p.out && p.ghost;
+      describe(slot,ghost?{2:'Last Word'}:p.out?{}:{0:'Dash',1:'Parry',2:'Push',3:rules.divergence?'Trick':'Emote',9:'Pause'},
+        ghost?'Watch your ghost. Aim and tap Last Word after its windup.':p.out?'You are out. Watch the arena.':'Watch the arena. Hold Push, aim, then release.',{active:true});
+    } else if(state==='countdown') describe(slot,{},'Watch the arena. Get ready.',{active:true});
+    else if(state==='round') describe(slot,roundDelay===0?{0:'Continue'}:{},'Watch the shared screen for the next round.');
+    else describe(slot,{0:'Select',...(state==='menu'?{1:editingMode?'Back':'All games'}:{}),
+      ...(state==='paused'?{9:'Resume'}:state==='match'?{9:'Rematch'}:editingMode?{9:'Start'}:{})},'Move to browse the shared screen.');
   }
   return descriptions;
 }
@@ -3293,7 +3203,9 @@ function frame(now) {
   const dt = Math.min(.025, (now - (last || now)) / 1000);
   last = now;
   drawLobbyEmotes(now);
-  const inputs = gamepads().map((pad, i) => readInput(i, pad));
+  const inputs = phoneInputs().map((pad, i) => readInput(i, pad));
+  for(let i=0;i<humanCount;i++) if(players?.[i]) players[i].color=playerAccent(i);
+  if(state==='playing' && slots.length && slots.every(slot=>!connectedPads.has(slot))) togglePause();
   if (state === 'match') updateResultsLock();
   if (state === 'kineticDraft') {
     tickKineticDraft(inputs,now);
@@ -3313,13 +3225,13 @@ function frame(now) {
     if (slot >= 0 && !connectedPads.has(slot)) {
       if (draftDisconnectedAt === null) {
         draftDisconnectedAt = now;
-        get('subtitle').textContent = 'Reconnect Player ' + (player+1) + '’s controller. An automatic pick follows in a moment.';
+        get('subtitle').textContent = 'Reconnect ' + deviceLabel(slots[player]) + '’s phone. An automatic pick follows in a moment.';
       }
       if (now-draftDisconnectedAt >= 4500) pickCard(selected,slot);
     } else if (slot >= 0) {
       if (draftDisconnectedAt !== null) {
         draftDisconnectedAt = null;
-        get('subtitle').textContent = 'Use your stick or D-pad · A / × to pick';
+        get('subtitle').textContent = 'Choose on your phone';
       }
       const input = inputs[player];
       if (input?.trick && startingDraft) previewBuildTrick();
@@ -3337,7 +3249,7 @@ function frame(now) {
   if (state === 'round') {
     roundDelay = Math.max(0, roundDelay - dt);
     if (roundDelay === 0) {
-      get('shortcut').textContent = 'Press any controller button or a key to continue';
+      get('shortcut').textContent = 'Tap Continue on your phone';
       if (inputs.some(input => input.any)) primary();
     }
   } else if (isLobby() && setup) {
@@ -3346,7 +3258,7 @@ function frame(now) {
     });
   } else if (isLobby() || state === 'paused') {
     const navigation = inputs.find((input, i) => slots[i] >= 0 &&
-      (input.left || input.right || input.up || input.down || input.dash || (editingMode && input.accessory)));
+      (input.left || input.right || input.up || input.down || input.dash || input.accessory));
     if (navigation) navigateMenu(navigation);
   }
   if (!settingUp && state === stateBeforeMenuInput && state !== 'round' && inputs.some(input => input.start)) {

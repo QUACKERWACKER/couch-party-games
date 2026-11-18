@@ -87,15 +87,9 @@ canvas { display: block; width: 100%; height: auto; }
 .groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 12px; align-items: start; }
 details { border: 1px solid var(--line); border-radius: 5px; padding: 7px 10px; }
 details[open] summary { color: var(--lime); }
-.controls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 12px; }
-.controls div { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: #251e32; border-radius: 5px; padding: 7px; font-size: .84rem; }
-kbd { background: #41334d; color: var(--lime); padding: 3px 6px; border-radius: 3px; white-space: nowrap; }
-.touch { display: none; gap: 6px; margin-top: 8px; }
-.touch button { touch-action: none; min-height: 48px; }
-@media (pointer: coarse) { .touch.playing { display: grid; grid-template-columns: repeat(4, 1fr); } }
 @media (max-width: 640px) {
   .lobby { grid-template-columns: 1fr; gap: 12px; }
-  .groups, .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .header-tools { flex-wrap: wrap; }
 }
 

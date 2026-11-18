@@ -25,7 +25,7 @@ const inputs = new Map();
 const empty = {x:0, y:0, buttons:[], edge:[]};
 const players = Array.from({length:14}, (_, i) => ({team:Math.floor(i/7), slot:i%7}));
 let keyboard = false, previousKeys = [], state = 'menu', phase, score, team, down, spot, line, goal, quarter, time;
-let carrier, flight, passed, elapsed, between, noticeUntil = 0, crate, walls, rally, liveStatus = '';
+let carrier, flight, passed, elapsed, between, noticeUntil = 0, walls, rally, liveStatus = '';
 let lastFrame = 0, simTime = 0, audio;
 let tryMode = '', kickFlight = null, kickMeter = null, kickoffNext = null, playCall, hazard, particles = [], impact = 0;
 let crowdUntil = 0, returning = '', returnTouchback = false;
@@ -59,20 +59,15 @@ const official={x:475,y:BOTTOM-38};
 const PASS_CHARGE_TIME = .95;
 const DASH_TIME=.34, DEFENSE_DASH_TIME=.30, POCKET_REACH=29, SACK_TIME=.24;
 let pocketPressure=0;
-const CLAIM_TIME=.48, WHEEL_SPIN=2.15, WHEEL_REVEAL=.95;
-let wheel=null, prize=null;
-const rewards=[
-  {key:'rocket', name:'Rocket Cleats', wedge:'ROCKET', detail:'Your ball carrier runs 45% faster.', seconds:5, color:'#fbd16a'},
-  {key:'sneaky', name:'Sneaky Defense', wedge:'SNEAKY', detail:'Your defenders can tackle and pick off passes from farther away.', seconds:7, color:'#ad98ee'},
-  {key:'bubble', name:'Bubble Wrap', wedge:'BUBBLE', detail:'Your next ball carrier can shrug off one tackle.', seconds:7, color:'#72d5db'},
-  {key:'sludge', name:'Swamp Legs', wedge:'SWAMP', detail:'The other team moves 28% slower.', seconds:4, color:'#a3d77a'},
-  {key:'gloves', name:'Magnet Gloves', wedge:'MAGNET', detail:'Your team has a much bigger catch radius.', seconds:7, color:'#f393b9'},
-  {key:'jukes', name:'Juke Juice', wedge:'JUICE', detail:'Your ball carrier can juke more often and dodge longer.', seconds:6, color:'#f69d63'},
-  {key:'freeze', name:'Freeze Tag', wedge:'FREEZE', detail:'The other team freezes in place.', seconds:1.6, color:'#9bd1ff'},
-  {key:'turbo', name:'Free Samples', wedge:'SAMPLES', detail:'Every teammate moves 22% faster.', seconds:5, color:'#e6dc8b'},
-  {key:'pinball', name:'Human Pinball', wedge:'PINBALL', detail:'Your ball carrier gets a speed boost and a one-tackle shield.', seconds:4, color:'#f4a391'},
-  {key:'gremlins', name:'Turf Gremlins', wedge:'GREMLINS', detail:'The other team slides when trying to turn.', seconds:4, color:'#acdbaa'}
+let forecast='CLEAR FIELD', perkPending=true, perkDraft=null, perkSerial=0;
+let drivePerks=[null,null];
+const captainPerks=[
+  {key:'hands',name:'Sticky Mitts',detail:'+5px catch reach'},
+  {key:'dash',name:'Quick Feet',detail:'15% shorter dash cooldown'},
+  {key:'charge',name:'Pocket Rhythm',detail:'12% faster pass charge'},
+  {key:'grip',name:'Firm Grip',detail:'10% stronger legal grapple slowdown'}
 ];
+const teamPerk=(p,key)=>drivePerks[p.team]?.key===key;
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max,n));
 const dist = (a,b) => Math.hypot(a.x-b.x,a.y-b.y);
@@ -396,6 +391,8 @@ function claimPossession(side) {
   qbSlots[side] = (possessions[side] ? eligible.find(p=>p.slot>previous) || eligible[0] : eligible[0]).slot;
   possessions[side]++;
   lastPossession=side;
+  perkPending=true;
+  drivePerks=[null,null];
 }
 
 function freshDrive(newTeam, at, temporary=false) {
@@ -425,10 +422,10 @@ function setFormation() {
   flight = null;
   elapsed = 0;
   passed = false;
-  crate = null;
   walls = [];
   rally = null;
   hazard = null;
+  forecastField();
   playIndex = qb().owner===null ? Math.floor(Math.random()*plays.length) : 0;
   defenseIndex = defenseCaptain().owner===null ? Math.floor(Math.random()*formations.length) : 0;
   menuAxes[0] = Math.abs(control(qb()).y)>.35;
@@ -591,12 +588,13 @@ function showPostgame() {
 
 function reset() {
   score = [0,0];
+  perkPending=true;
+  perkDraft=null;
+  drivePerks=[null,null];
   matchStats.clear();
   for (const p of players) statsFor(p);
   $('postgame').hidden=true;
   canvas.hidden=false;
-  wheel=null;
-  prize=null;
   lastPossession=null;
   qbSlots.fill(0);
   possessions.fill(0);
@@ -667,6 +665,75 @@ $('keyboard').onclick = () => {
   assignSeats();
 };
 
+function forecastField() {
+  walls=[];
+  hazard=null;
+  forecast='CLEAR FIELD';
+  if (tryMode) return;
+  const roll=Math.random(), d=direction();
+  const x=clamp(spot+d*(80+Math.random()*75),LEFT+32,RIGHT-32);
+  if (roll<.16) {
+    walls=[{x,y:MID-80},{x,y:MID+80}];
+    forecast='INFLATABLES · MARKED ON FIELD';
+  } else if (roll<.32) {
+    hazard={duck:false,x,y:MID+(Math.random()<.5 ? -91 : 91)};
+    forecast='SODA SPILL · SLIPPERY PATCH';
+  } else if (roll<.48) {
+    hazard={duck:true,triggered:false,x,y:TOP+20};
+    forecast='DUCK CROSSING · STARTS 1.5s AFTER SNAP';
+  }
+}
+
+function draftCaptain(side) {
+  return side===team ? qb() : defenseCaptain();
+}
+
+function beginPerkDraft() {
+  perkPending=false;
+  perkSerial++;
+  perkDraft={id:perkSerial,age:0,reveal:0,teams:[0,1].map(side=>{
+    const pool=captainPerks.filter(perk=>side===team ? perk.key!=='grip' : perk.key!=='charge');
+    const first=Math.floor(Math.random()*pool.length);
+    const second=(first+1+Math.floor(Math.random()*(pool.length-1)))%pool.length;
+    return {options:[pool[first],pool[second]],selected:0,confirmed:false,tilted:false};
+  })};
+  phase='perks';
+  $('call').hidden=true;
+}
+
+function choosePerk(owner,choice) {
+  if (!perkDraft || choice.id!==perkDraft.id || ![0,1].includes(choice.index)) return;
+  const side=[0,1].find(side=>draftCaptain(side).owner===owner && owner!==null);
+  if (side===undefined || perkDraft.teams[side].confirmed) return;
+  perkDraft.teams[side].selected=choice.index;
+  perkDraft.teams[side].confirmed=true;
+}
+
+function updatePerkDraft(dt) {
+  perkDraft.age+=dt;
+  for (const side of [0,1]) {
+    const pick=perkDraft.teams[side], captain=draftCaptain(side), input=control(captain);
+    if (pick.confirmed) continue;
+    const axis=input.y || input.x;
+    if (Math.abs(axis)<.35) pick.tilted=false;
+    if (Math.abs(axis)>.58 && !pick.tilted) {
+      pick.selected=1-pick.selected;
+      pick.tilted=true;
+    }
+    if (input.edge[0] || captain.owner===null && perkDraft.age>1.1 || perkDraft.age>=8) {
+      pick.confirmed=true;
+    }
+  }
+  if (!perkDraft.teams.every(pick=>pick.confirmed)) return;
+  drivePerks=perkDraft.teams.map(pick=>pick.options[pick.selected]);
+  perkDraft.reveal+=dt;
+  if (perkDraft.reveal<1.6) return;
+  perkDraft=null;
+  phase='ready';
+  between=0;
+  $('call').hidden=true;
+}
+
 function snap() {
   phase = 'live';
   pocketPressure=0;
@@ -677,20 +744,6 @@ function snap() {
     side:plays[playIndex].side || (Math.random()<.5 ? -1 : 1),
     rushers:formations[defenseIndex].rushers
   };
-  crate = !tryMode && !prize && Math.random()<.63 ? makePrizeCrate() : null;
-  const chaos = tryMode ? 1 : Math.random();
-  if (chaos<.15) {
-    const x = clamp(line+direction()*110,LEFT+28,RIGHT-28);
-    walls = [{x,y:MID-64},{x,y:MID+64}];
-    say('INFLATABLES ON THE FIELD');
-  } else if (chaos<.36) {
-    const duck = chaos<.24;
-    hazard = {
-      duck, triggered:false, x:clamp(line+direction()*(48+Math.random()*100),LEFT+25,RIGHT-25),
-      y:duck ? MID-110 : MID+(Math.random()-.5)*155
-    };
-    say(duck ? 'THE DUCKS ARE LOOSE!' : 'SODA SPILL!');
-  }
   sound(320,.08);
 }
 
@@ -728,6 +781,9 @@ function openKickoff(receiver) {
   const kicking = 1-receiver;
   freshDrive(kicking,endzoneFor(kicking,35),true);
   setFormation();
+  walls=[];
+  hazard=null;
+  forecast='CLEAR FIELD';
   carrier = null;
   const d = direction();
   for (const p of offense()) {
@@ -1005,7 +1061,7 @@ function pocketClosed(p) {
   if (p!==carrier || !inPocket()) return false;
   let nearby=0;
   for (const defender of defense()) {
-    if (!defender.stun && prizeSpeed(defender)>0 && dist(defender,p)<POCKET_REACH && ++nearby===2) return true;
+    if (!defender.stun && dist(defender,p)<POCKET_REACH && ++nearby===2) return true;
   }
   return false;
 }
@@ -1023,7 +1079,7 @@ function updatePocketPressure(dt) {
   if (pocketPressure<SACK_TIME) return false;
   burst(carrier.x,carrier.y,'#fff0c7',20,.5,85);
   impact=.2;
-  finishPlay('sack',carrier.x,defense().filter(p=>!p.stun && prizeSpeed(p)>0)
+  finishPlay('sack',carrier.x,defense().filter(p=>!p.stun)
     .sort((a,b)=>dist(a,carrier)-dist(b,carrier))[0]);
   return true;
 }
@@ -1076,7 +1132,7 @@ function passTarget(p) {
   let closest=null;
   let bestDistance=31;
   for (const receiver of offense()) {
-    if (receiver===p || receiver.stun || prizeSpeed(receiver)===0) continue;
+    if (receiver===p || receiver.stun) continue;
     const predicted={x:receiver.x+receiver.vx*predictionTime,y:receiver.y+receiver.vy*predictionTime};
     if (predicted.y<=TOP || predicted.y>=BOTTOM || predicted.x<14 || predicted.x>946) continue;
     const error=dist(target,predicted);
@@ -1109,7 +1165,7 @@ function updateAim(p,input,dt) {
     p.aim.x=input.x/magnitude;
     p.aim.y=input.y/magnitude;
   }
-  p.aim.held=Math.min(PASS_CHARGE_TIME,p.aim.held+dt);
+  p.aim.held=Math.min(PASS_CHARGE_TIME,p.aim.held+dt*(teamPerk(p,'charge') ? 1/.88 : 1));
 }
 
 function runningPlay(call) {
@@ -1117,9 +1173,9 @@ function runningPlay(call) {
 }
 
 function handoff(p) {
-  if (p!==carrier || !canPass(p) || pocketClosed(p) || p.stun || prizeSpeed(p)===0) return;
+  if (p!==carrier || !canPass(p) || pocketClosed(p) || p.stun) return;
   const back=offense()[1];
-  if (back.stun || prizeSpeed(back)===0 || dist(p,back)>=55 || direction()*(back.x-p.x)>14) return;
+  if (back.stun || dist(p,back)>=55 || direction()*(back.x-p.x)>14) return;
   p.aim=null;
   carrier=back;
   back.dodge=.28;
@@ -1182,18 +1238,17 @@ function updateFlight(dt) {
   flight.y = flight.fromY+(flight.toY-flight.fromY)*f;
   const height=passHeight(flight,f);
   if (canPickPass(f,height) && flight.y>TOP && flight.y<BOTTOM && flight.x>=14 && flight.x<=946) {
-    const defenders=defense().filter(p=>!p.stun && prizeSpeed(p)>0);
+    const defenders=defense().filter(p=>!p.stun);
     const receiverDistance = Math.min(...offense().map(p=>dist(p,flight)));
     const pickers=defenders.filter(p=>{
       const timed = p.catchWindow>0;
-      const bonus=hasPrize(p,'sneaky') ? 7 : 0;
-      const range=dist(p,flight);
-      if (timed && range<=23+bonus) return true;
+      const range=dist(p,flight)-(teamPerk(p,'hands') ? 5 : 0);
+      if (timed && range<=23) return true;
       if (p.owner===null) {
-        const reach=18+cpuSkill()*7+bonus;
+        const reach=18+cpuSkill()*7;
         return range<=reach && (range<=9+cpuSkill()*4 || range<receiverDistance);
       }
-      return f===1 && range<=12+bonus && range+4<receiverDistance;
+      return f===1 && range<=12 && range+4<receiverDistance;
     }).sort((a,b)=>dist(a,flight)-dist(b,flight));
     if (pickers.length) {
       flight = null;
@@ -1205,7 +1260,7 @@ function updateFlight(dt) {
   const target = flight;
   flight = null;
   const catchRadius=target.manual ? 18 : 26;
-  const near = offense().filter(p=>!p.stun && prizeSpeed(p)>0 && dist(p,target)<catchRadius+(hasPrize(p,'gloves') ? 17 : 0))
+  const near = offense().filter(p=>!p.stun && dist(p,target)<catchRadius+(teamPerk(p,'hands') ? 5 : 0))
     .sort((a,b)=>dist(a,target)-dist(b,target))[0];
   if (!near || target.y<=TOP || target.y>=BOTTOM || target.x<14 || target.x>946) {
     finishPlay('incomplete',line);
@@ -1216,83 +1271,6 @@ function updateFlight(dt) {
   near.dodge = .15;
   burst(near.x,near.y,'#ffe29b',9);
   sound(760,.12);
-}
-
-function makePrizeCrate() {
-  const d=direction();
-  const offset=(12+Math.random()*12)*YARD;
-  const forward=line+d*offset;
-  const x=forward>LEFT+22 && forward<RIGHT-22 ? forward : line-d*offset;
-  const y=Math.random()<.5 ? TOP+23 : BOTTOM-23;
-  return {x:clamp(x,LEFT+22,RIGHT-22),y,at:1.15,expires:11,progress:0,claimer:null};
-}
-
-function updateCrate(dt) {
-  if (!crate || elapsed<crate.at) return;
-  if (elapsed>=crate.expires) {crate=null;return;}
-  const nearby=players.filter(p=>!p.stun && dist(p,crate)<17).sort((a,b)=>dist(a,crate)-dist(b,crate));
-  const claimant=nearby[0];
-  const contested=claimant && nearby.some(p=>p.team!==claimant.team);
-  if (!claimant || contested) {
-    crate.progress=0;
-    crate.claimer=null;
-    return;
-  }
-  if (claimant!==crate.claimer) {
-    crate.claimer=claimant;
-    crate.progress=0;
-  }
-  crate.progress+=dt;
-  if (crate.progress<CLAIM_TIME) return;
-  const index=Math.floor(Math.random()*rewards.length);
-  wheel={index,team:claimant.team,player:claimant,time:0,lastTick:-1,
-    target:Math.PI*8-(index+.5)*Math.PI*2/rewards.length};
-  crate=null;
-  $('call').hidden=true;
-  sound(523,.15);
-}
-
-function updateWheel(dt) {
-  wheel.time+=dt;
-  const fraction=clamp(wheel.time/WHEEL_SPIN,0,1);
-  const tickIndex=Math.floor(wheelAngle(wheel)/(Math.PI*2/rewards.length));
-  if (fraction<1 && tickIndex!==wheel.lastTick) {
-    wheel.lastTick=tickIndex;
-    sound(260,.045,'triangle');
-  }
-  if (wheel.time>=WHEEL_SPIN && !wheel.revealed) {
-    wheel.revealed=true;
-    [494,659,880].forEach((note,i)=>sound(note,.16,'triangle',i*.085));
-  }
-  if (wheel.time<WHEEL_SPIN+WHEEL_REVEAL) return;
-  const reward=rewards[wheel.index];
-  prize={reward,team:wheel.team,left:reward.seconds,shield:reward.key==='bubble' || reward.key==='pinball'};
-  // Give the claimant a moment to react when play resumes.
-  wheel.player.dodge=Math.max(wheel.player.dodge,.45);
-  burst(wheel.player.x,wheel.player.y,reward.color,23,.75,96);
-  say(reward.name.toUpperCase()+' · '+names[prize.team]);
-  wheel=null;
-}
-
-function wheelAngle(spin) {
-  const progress=clamp(spin.time/WHEEL_SPIN,0,1);
-  return spin.target*(1-Math.pow(1-progress,3));
-}
-
-function hasPrize(p,key) {
-  return prize?.team===p.team && prize.reward.key===key;
-}
-
-function prizeSpeed(p) {
-  if (!prize) return 1;
-  if (prize.team!==p.team) {
-    if (prize.reward.key==='freeze') return 0;
-    return prize.reward.key==='sludge' ? .72 : 1;
-  }
-  if (prize.reward.key==='turbo') return 1.22;
-  if (p===carrier && prize.reward.key==='rocket') return 1.45;
-  if (p===carrier && prize.reward.key==='pinball') return 1.28;
-  return 1;
 }
 
 function cpuInterceptionPoint(ball) {
@@ -1358,10 +1336,6 @@ function cpuMove(p) {
     x = clamp(mark.x+mark.vx*.2+d*(slot>=5 ? 32 : 17),20,940);
     y = mark.y+mark.vy*.15;
   }
-  if (crate && elapsed>=crate.at && !flight && dist(p,crate)<62 &&
-    (p===carrier || slot>=5) && !defense().some(rival=>p.team===team && dist(p,rival)<23)) {
-    ({x,y}=crate);
-  }
   const range = Math.hypot(x-p.x,y-p.y);
   if (range<=4) return empty;
   const closing=carrier && (p===carrier
@@ -1375,7 +1349,7 @@ function cpuMove(p) {
 function updateGrapple(p,input,x,y,dt) {
   p.grappleCooldown=Math.max(0,p.grappleCooldown-dt);
   p.grapple=Math.max(0,p.grapple-dt);
-  if (p.team===team || p.stun || prizeSpeed(p)===0) {
+  if (p.team===team || p.stun) {
     p.grip=null;
     p.gripTime=0;
     return;
@@ -1392,7 +1366,7 @@ function updateGrapple(p,input,x,y,dt) {
   const magnitude=Math.hypot(x,y);
   const fx=magnitude>.15 ? x/magnitude : p.fx;
   const fy=magnitude>.15 ? y/magnitude : p.fy;
-  const reach=hasPrize(p,'sneaky') ? 49 : 42;
+  const reach=42;
   if (!p.grip || p.grip.dodge || dist(p,p.grip)>reach+13) {
     p.grip=offense().filter(target=>{
       if (target.dodge || (p.owner===null && target!==carrier)) return false;
@@ -1436,17 +1410,16 @@ function move(p,dt) {
   const size = Math.max(1,Math.hypot(x,y));
   x /= size;
   y /= size;
-  const rewardSpeed=prizeSpeed(p);
   updateGrapple(p,input,x,y,dt);
-  if (p.stun || rewardSpeed===0) {p.aim=null;p.vx=0;p.vy=0;return;}
+  if (p.stun) {p.aim=null;p.vx=0;p.vy=0;return;}
   const trapped=pocketClosed(p);
   if (trapped) {p.aim=null;p.dive=0;p.dodge=0;}
   const defending=p.team!==team;
   if (input.edge?.[2] && !trapped && !p.aim && p.cool===0 &&
     (defending || p!==qb() || returning || elapsed>=2)) {
     p.dive=defending ? DEFENSE_DASH_TIME : DASH_TIME;
-    p.cool=defending ? 1.55 : p===carrier ? (hasPrize(p,'jukes') ? .65 : 1.45) : 1.05;
-    if (p===carrier) p.dodge=hasPrize(p,'jukes') ? .60 : .41;
+    p.cool=(defending ? 1.55 : p===carrier ? 1.45 : 1.05)*(teamPerk(p,'dash') ? .85 : 1);
+    if (p===carrier) p.dodge=.41;
     burst(p.x,p.y,p.dodge ? colors[p.team] : '#dee8bf',7,.35,56);
     if (p.dodge) sound(175,.09);
   }
@@ -1466,10 +1439,10 @@ function move(p,dt) {
   const rushSpeed=normalSpeed*(.56+.44*clamp((elapsed-1.05)/.72,0,1));
   const base=p===carrier ? 105 : openField ? 135 : pocketRush ? rushSpeed : normalSpeed;
   const sprint = p.team===team && input.buttons?.[1] ? (p===carrier ? 1.19 : 1.23) : 1;
-  const moveScale=trapped ? .62 : p.dive ? (defending ? 1.67 : p===carrier ? 1.79 : 1.84) : p.grabbed && !p.dodge ? .36 : p.grip ? .92 : 1;
+  const moveScale=trapped ? .62 : p.dive ? (defending ? 1.67 : p===carrier ? 1.79 : 1.84) : p.grabbed && !p.dodge ? (drivePerks[1-p.team]?.key==='grip' ? .324 : .36) : p.grip ? .92 : 1;
   const cpuPace=p.owner===null ? .69+.31*cpuSkill() : 1;
-  const speed = base*sprint*(p.boost ? 1.65 : 1)*moveScale*rewardSpeed*cpuPace;
-  const slippery=p.slip || (prize?.reward.key==='gremlins' && p.team!==prize.team);
+  const speed = base*sprint*(p.boost ? 1.65 : 1)*moveScale*cpuPace;
+  const slippery=p.slip;
   const steering = slippery && !p.aim ? Math.min(1,dt*1.6) : 1;
   p.vx+=(x*speed-p.vx)*steering;
   p.vy+=(y*speed-p.vy)*steering;
@@ -1478,8 +1451,8 @@ function move(p,dt) {
   if (Math.hypot(x,y)>.09) {
     const previous=Math.floor(p.step);
     p.fx=x;p.fy=y;p.step+=dt*(p.dive ? 24 : 14);
-    if (Math.floor(p.step)!==previous && (p.dive || p.boost || rewardSpeed>1 || input.buttons?.[1])) {
-      burst(p.x-9*x,p.y-9*y,p.boost || rewardSpeed>1 ? '#ffbf62' : '#afc59c',2,.25,35);
+    if (Math.floor(p.step)!==previous && (p.dive || p.boost || input.buttons?.[1])) {
+      burst(p.x-9*x,p.y-9*y,p.boost ? '#ffbf62' : '#afc59c',2,.25,35);
     }
   }
   if (hazard && !hazard.duck && dist(p,hazard)<34) {
@@ -1497,16 +1470,15 @@ function move(p,dt) {
 
 function tick(dt) {
   if (state!=='playing') return;
-  if (wheel) {updateWheel(dt);return;}
   between += dt;
+  if (phase==='perks') {updatePerkDraft(dt);return;}
   if (phase==='halftime') {
     if (between>=halftime.length) {
       halftime=null;
       firstHalfHighlights=[];
       quarter=3;
       time=QUARTER_SECONDS;
-      prize=null;
-      openKickoff(1);
+          openKickoff(1);
     }
     return;
   }
@@ -1567,6 +1539,7 @@ function tick(dt) {
     return;
   }
   if (phase==='ready') {
+    if (perkPending && !tryMode) {beginPerkDraft();return;}
     const captain = qb();
     const input = control(captain);
     const auto = captain.owner===null && between>1.55;
@@ -1575,6 +1548,7 @@ function tick(dt) {
     const shouldKick = down===4 && (inRange ? !needsTouchdown && Math.abs(goal-spot)>12
       : !needsTouchdown && Math.abs(goal-spot)>32);
     selectCalls();
+    if (between<2) return;
     if ((input.edge[0] || input.edge[3]) && puntSelected()) kick(true);
     else if (input.edge[3] || (auto && shouldKick)) kick();
     else if (input.edge[0] || auto) snap();
@@ -1586,13 +1560,9 @@ function tick(dt) {
     const cue=clamp(ball.x-direction()*18,120,840);
     official.x+=clamp(cue-official.x,-dt*80,dt*80);
   }
-  if (prize) {
-    prize.left-=dt;
-    if (prize.left<=0) prize=null;
-  }
   if (!tryMode) time=Math.max(0,time-dt);
-  if (hazard?.duck) {
-    hazard.y+=dt*126;
+  if (hazard?.duck && elapsed>=1.5) {
+    hazard.y+=dt*87;
     const bumped=players.find(p=>dist(p,hazard)<18);
     if (bumped && !hazard.triggered) {
       hazard.triggered=true;
@@ -1606,17 +1576,12 @@ function tick(dt) {
   for (const p of offense()) move(p,dt);
   for (const p of defense()) move(p,dt);
   recordReplay();
-  updateCrate(dt);
-  if (wheel) {
-    $('clock').textContent='0:'+String(Math.ceil(time)).padStart(2,'0');
-    return;
-  }
   if (updatePocketPressure(dt)) {
     $('clock').textContent='0:'+String(Math.ceil(time)).padStart(2,'0');
     return;
   }
   if (carrier===qb() && runningPlay(playCall) && elapsed>=.22 && elapsed<.72 && !carrier.aim) handoff(carrier);
-  if (carrier===qb() && carrier.owner===null && prizeSpeed(carrier)>0 && canPass(carrier) &&
+  if (carrier===qb() && carrier.owner===null && canPass(carrier) &&
     (!runningPlay(playCall) || elapsed>=.72)) {
     const requested=offense().some(p=>simTime-p.call<.8 && p!==carrier);
     const pressure=defense().some(p=>!p.stun && dist(p,carrier)<52);
@@ -1627,7 +1592,7 @@ function tick(dt) {
     }
   }
   for (const p of offense()) {
-    if (p===carrier || p.stun || p===qb() || prizeSpeed(p)===0) continue;
+    if (p===carrier || p.stun || p===qb()) continue;
     const protecting=protectingPocket(p);
     const block=defense().find(other=>other.stun<=0 && other.cool<=0 &&
       dist(p,other)<(protecting ? 22 : 17) && (protecting || !carrier || dist(carrier,other)>22 || (p.owner!==null && p.dive)));
@@ -1644,17 +1609,15 @@ function tick(dt) {
     else if (elapsed>.18) {
       let tackler=null;
       for (const p of defense()) {
-        const reach=(p.grip===carrier ? 20 : p.dive ? 17 : 15)+(hasPrize(p,'sneaky') ? 5 : 0);
-        const contact=!p.stun && !carrier.dodge && prizeSpeed(p)>0 && dist(p,carrier)<reach;
+        const reach=(p.grip===carrier ? 20 : p.dive ? 17 : 15);
+        const contact=!p.stun && !carrier.dodge && dist(p,carrier)<reach;
         p.contact=contact ? p.contact+dt : 0;
         const required=CONTACT_TIME+(p.owner===null ? .15*(1-cpuSkill()) : 0);
         if (p.contact>=required && !tackler) tackler=p;
       }
       if (tackler && !carrier.dodge) {
-        const teamShield=prize?.team===carrier.team && prize.shield;
-        if (carrier.shield || teamShield) {
+        if (carrier.shield) {
           carrier.shield=false;
-          if (teamShield) prize.shield=false;
           carrier.dodge=.52;
           tackler.contact=0;
           tackler.stun=.65;
@@ -1892,7 +1855,7 @@ function sprite(p) {
     rect(x-6,y+14,12,2,color);
   }
   if (p.boost) {rect(x-15*p.fx-3,y-2,7,4,'#ffdc64');rect(x-23*p.fx-3,y+2,5,2,'#ff8d59');}
-  if (p.shield || (p===carrier && prize?.team===p.team && prize.shield)) {
+  if (p.shield) {
     ctx.strokeStyle='#f8e39c';
     ctx.lineWidth=2;
     ctx.strokeRect(x-14,y-14,28,27);
@@ -2008,56 +1971,6 @@ function drawLobby() {
   if (!reducedMotion?.matches) {
     for (const p of particles) rect(p.x,p.y,p.size,p.size,p.color);
   }
-}
-
-function drawPrizeWheel() {
-  const {index,team,revealed}=wheel;
-  const reward=rewards[index];
-  const angle=reducedMotion?.matches && !revealed ? 0 : wheelAngle(wheel);
-  const x=335, y=221, radius=143, slice=Math.PI*2/rewards.length;
-  rect(0,0,960,432,'#0b171bd9');
-  rect(171,52,618,330,'#1a272b');
-  rect(171,52,618,3,'#f9d477');
-  for (const [i,option] of rewards.entries()) {
-    const begin=angle-Math.PI/2+i*slice;
-    ctx.beginPath();
-    ctx.moveTo(x,y);
-    ctx.arc(x,y,radius,begin,begin+slice);
-    ctx.closePath();
-    ctx.fillStyle=option.color;
-    ctx.fill();
-    ctx.strokeStyle='#1a272b';
-    ctx.lineWidth=2;
-    ctx.stroke();
-    ctx.save();
-    ctx.translate(x,y);
-    ctx.rotate(begin+slice/2);
-    label(option.wedge,101,4,10,'#142529');
-    ctx.restore();
-  }
-  ctx.beginPath();
-  ctx.arc(x,y,25,0,Math.PI*2);
-  ctx.fillStyle='#1a272b';
-  ctx.fill();
-  label('7',x,y+9,22,'#fbd16a');
-  label('▼',x,y-radius+5,26,'#fff6df');
-  label('PRIZE WHEEL',511,114,24,'#ffe08b','left');
-  label(names[team]+' CLAIMED IT',511,143,13,colors[team],'left');
-  label(revealed ? reward.name.toUpperCase() : 'SPINNING…',511,215,21,revealed ? reward.color : '#fff6df','left');
-  if (revealed) {
-    const words=reward.detail.split(' ');
-    let row='', rowY=242;
-    for (const word of words) {
-      if ((row+' '+word).length>34) {
-        label(row,511,rowY,11,'#d1dfd8','left');
-        row=word;
-        rowY+=17;
-      } else row=row ? row+' '+word : word;
-    }
-    if (row) label(row,511,rowY,11,'#d1dfd8','left');
-    label(reward.seconds+' SECONDS OF LIVE PLAY',511,315,11,'#ffe08b','left');
-  }
-  label('PLAY PAUSED',511,350,11,'#abbbbb','left');
 }
 
 function refAnnouncing() {
@@ -2230,8 +2143,42 @@ function drawHalftime() {
   label(clip.title,480,402,17,color);
 }
 
+function drawPerkDraft() {
+  const status='● CAPTAINS · CHOOSE A DRIVE PERK';
+  if (liveStatus!==status) {liveStatus=status;$('status').textContent=status;}
+  rect(0,0,960,432,'#101f25e9');
+  label(perkDraft.reveal ? 'BOTH TEAMS · DRIVE PERKS' : 'CAPTAIN’S CHOICE',480,62,25,'#ffe08c');
+  label('Stick to choose · J / bottom to lock · auto pick in '+Math.max(0,Math.ceil(8-perkDraft.age))+'s',480,91,12,'#b6ccbf');
+  for (const side of [0,1]) {
+    const pick=perkDraft.teams[side], x=side===0 ? 25 : 495;
+    label(names[side]+' · '+draftCaptain(side).label,x+220,135,16,colors[side]);
+    pick.options.forEach((option,index)=>{
+      const y=157+index*96;
+      rect(x,y,440,82,index===pick.selected ? '#3b514a' : '#1d3034');
+      if (index===pick.selected) rect(x,y,4,82,'#ffe08c');
+      label(option.name,x+18,y+31,20,index===pick.selected ? '#ffe08c' : '#f0ead4','left');
+      label(option.detail,x+18,y+54,12,'#b6ccbf','left');
+    });
+    label(pick.confirmed ? 'LOCKED · '+pick.options[pick.selected].name : 'PICK ONE',x+220,376,13,colors[side]);
+  }
+}
+
+function drawForecast() {
+  if (!hazard?.duck) return;
+  ctx.save();
+  ctx.setLineDash([6,7]);
+  ctx.strokeStyle='#ffe08cb0';
+  ctx.lineWidth=3;
+  ctx.beginPath();
+  ctx.moveTo(hazard.x,TOP+18);
+  ctx.lineTo(hazard.x,BOTTOM-18);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function draw() {
   if (state==='menu') {drawLobby();return;}
+  if (phase==='perks') {ctx.drawImage(field,0,0);drawPerkDraft();return;}
   if (phase==='halftime') {
     drawHalftime();
     const status=state==='paused' ? 'PAUSED' : 'HALFTIME SHOW';
@@ -2272,22 +2219,7 @@ function draw() {
     label('BOING',wall.x,wall.y+10,9,'#471e49');
   }
   drawHazard();
-  if (crate && elapsed>=crate.at) {
-    const y=crate.y-(motion ? Math.sin(simTime*8)*4 : 0);
-    ctx.beginPath();
-    ctx.arc(crate.x,crate.y,17,0,Math.PI*2);
-    ctx.lineWidth=1.5;
-    ctx.strokeStyle='#ffd975ab';
-    ctx.stroke();
-    rect(crate.x-11,crate.y+8,22,5,'#192e2a80');
-    rect(crate.x-10,y-12,20,20,'#ffc857');
-    rect(crate.x-8,y-10,16,2,'#ffeaa4');
-    label('?',crate.x,y+4,15,'#784625');
-    rect(crate.x+13,y-8,3,3,'#fff3b2');
-    rect(crate.x-14,crate.y+13,28,4,'#163029');
-    rect(crate.x-13,crate.y+14,26*clamp(crate.progress/CLAIM_TIME,0,1),2,'#ffe279');
-    label(crate.claimer ? 'CLAIMING' : 'PRIZE',crate.x,crate.y-22,10,'#ffdf8e');
-  }
+  if (phase==='ready') drawForecast();
   if (phase==='ready' && state==='playing') drawPlayRoutes();
   drawOfficial();
   for (const p of [...players].sort((a,b)=>a.y-b.y)) {
@@ -2328,18 +2260,17 @@ function draw() {
     label('J / BOTTOM TO '+(puntSelected() ? 'PUNT' : 'SNAP'),480,411,11,'#ffe08b');
     label((defender.label || 'CPU')+' DEF ↑↓ '+formations[defenseIndex].name,790,411,12,colors[1-team],'right');
   }
-  if (prize && phase==='live' && !wheel) {
-    rect(306,397,348,22,'#14272b');
-    label(names[prize.team]+' · '+prize.reward.name.toUpperCase()+' · '+Math.ceil(prize.left)+'s',
-      480,412,11,prize.reward.color);
-  }
-  if (wheel && state==='playing') drawPrizeWheel();
   if (flagScene && between<REPLAY_TIME) drawFlagReplay();
   else if (refAnnouncing()) drawFlagCall();
   else if (touchdownScene && touchdownSequenceAge()>=0 && touchdownAge()<0) drawTouchdownReplay();
   else if (touchdownScene && touchdownAge()>=0) drawTouchdown();
+  if (phase==='ready') {
+    rect(170,8,620,36,'#152a2cf0');
+    label(forecast+(between<2 ? ' · SNAP IN '+Math.ceil(2-between)+'s' : ' · READY'),480,22,11,'#ffe08c');
+    label(drivePerks.map((perk,i)=>(i===0 ? 'DOGS' : 'TOADS')+' · '+(perk?.name || 'NO PERK')).join('     '),480,37,10,'#e6ead5');
+  }
   const kicking = phase==='kickMeter' || phase==='kickFlight';
-  const status=state==='paused'?'PAUSED':state==='over'?'FINAL SCORE':refAnnouncing() ? 'FLAG · '+flagScene.title : flagScene && between<REPLAY_TIME ? 'INSTANT REPLAY' : touchdownScene ? (touchdownAge()<0 ? 'TOUCHDOWN REPLAY' : 'TOUCHDOWN · '+names[touchdownScene.team]) : wheel ? 'PRIZE WHEEL · PLAY PAUSED' : flag ? 'FLAG DOWN · PLAY LIVE' :
+  const status=state==='paused'?'PAUSED':state==='over'?'FINAL SCORE':refAnnouncing() ? 'FLAG · '+flagScene.title : flagScene && between<REPLAY_TIME ? 'INSTANT REPLAY' : touchdownScene ? (touchdownAge()<0 ? 'TOUCHDOWN REPLAY' : 'TOUCHDOWN · '+names[touchdownScene.team]) : flag ? 'FLAG DOWN · PLAY LIVE' :
     names[team]+(kicking ? ' KICKING  ·  ' : ' BALL  ·  ')+(phase==='try' ? 'CHOOSE KICK OR GO FOR TWO' : phase==='kickMeter' ? kickTitle(kickMeter.kind)+' · TIME THE KICK' : phase==='kickFlight' ? kickTitle(kickFlight.kind)+' · IN THE AIR' :
     phase==='ready' ? 'AT THE LINE' : phase==='live' ? returning ? (returning==='kickoff' ? 'KICKOFF RETURN' : 'INTERCEPTION RETURN') : tryMode ? 'TWO-POINT TRY' : pocketPressure ? 'POCKET COLLAPSING' : 'PLAY LIVE' : 'WHISTLE');
   if (liveStatus!==status) {
@@ -2349,6 +2280,7 @@ function draw() {
 }
 
 function choosePhonePlay(owner,choice) {
+  if (state==='playing' && phase==='perks' && choice.kind==='perk') {choosePerk(owner,choice);return;}
   if (state!=='playing' || phase!=='ready' || owner==null || choice.id!==playbookId ||
     !Number.isInteger(choice.index) || choice.index<0) return;
   if (choice.kind==='defense') {
@@ -2367,7 +2299,7 @@ function phonePlaybook(kind) {
   const stamp=playbookId+':'+team+':'+down+':'+offense().map(p=>Number(p.owner===null)).join('');
   const selected=kind==='defense' ? defenseIndex : playIndex;
   if (phoneBookCache[kind]?.stamp!==stamp) phoneBookCache[kind]={stamp,book:buildPhonePlaybook(kind)};
-  return {...phoneBookCache[kind].book,selected};
+  return {...phoneBookCache[kind].book,selected,snapWait:Math.max(0,Math.ceil(2-between))};
 }
 
 function buildPhonePlaybook(kind) {
@@ -2399,15 +2331,18 @@ function describePhones() {
     if (state==='menu') mode='lobby';
     else if (state==='paused') mode='paused';
     else if (state==='over') mode='final';
+    else if (phase==='perks') mode=p===draftCaptain(p.team) ? 'perks' : 'waiting';
     else if (special) mode=special;
     else if (phase==='ready') mode=onOffense ? (captain ? 'ready' : 'waiting') :
       p===defenseCaptain() ? 'defenseReady' : 'waiting';
-    else if (phase!=='live' || wheel) mode='waiting';
+    else if (phase!=='live') mode='waiting';
     else if (!onOffense) mode='defense';
     else if (p===carrier && canPass(p)) mode='offense';
     else if (p===carrier) mode='runner';
     else mode='receiver';
-    const playbook=mode==='ready' ? (offenseBook ??= phonePlaybook('offense')) :
+    const pick=perkDraft?.teams[p.team];
+    const playbook=mode==='perks' ? {id:perkDraft.id,kind:'perk',selected:pick.selected,confirmed:pick.confirmed,
+      options:pick.options} : mode==='ready' ? (offenseBook ??= phonePlaybook('offense')) :
       mode==='defenseReady' ? (defenseBook ??= phonePlaybook('defense')) : undefined;
     labels[p.owner]={player:p.label,team:names[p.team],host:p.owner===currentHost,mode,playbook};
   }
@@ -2429,7 +2364,7 @@ drawField();
 function frame(now) {
   const dt=Math.min(.034,(now-lastFrame)/1000);
   lastFrame=now;
-  if (state!=='paused' && !wheel) {
+  if (state!=='paused') {
     simTime+=dt;
     updateEffects(dt);
   }

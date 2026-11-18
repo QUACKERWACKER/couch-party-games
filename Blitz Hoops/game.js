@@ -21,10 +21,12 @@ const maxCharge = 1.25;
 const possessionTime = 12;
 const periodTime = 28;
 const injuryReplayTime = 1.65;
-const recoveryPreview = 1.6;
+const recoveryBrief = 3;
+const recoveryPreview = 2;
+const recoveryAnswerStart = recoveryBrief + recoveryPreview;
 const recoveryWindow = 4.5;
 const recoveryActions = [[0, 'ICE'], [1, 'TAPE'], [3, 'STRETCH']];
-const freeThrowStart = .35;
+const freeThrowStart = 1.8;
 const freeThrowSpeed = 1.17;
 const freeThrowWindow = .065;
 const benchCheer = [0, 0];
@@ -38,6 +40,23 @@ const cpuArchetypes = [
   ['Slasher', 89, 51, 88, 58, 73],
   ['Floor General', 61, 79, 57, 71, 91]
 ];
+const chaosAbilities = [
+  {id: 'rocket', name: 'Rocket Shoes', text: 'Race around 45% faster for 3 seconds.'},
+  {id: 'sniper', name: 'Hot Hand', text: 'Your next shot gets a green release and better odds. Lasts 4 seconds.'},
+  {id: 'magnet', name: 'Ball Magnet', text: 'Scoop up a loose ball from 85 steps away for 4 seconds.'},
+  {id: 'bubble', name: 'Bubble Wrap', text: 'Steals and blocks cannot touch you for 3 seconds.'},
+  {id: 'freeze', name: 'Brain Freeze', text: 'Slow opponents within 100 steps for 2 seconds.'},
+  {id: 'spring', name: 'Pogo Legs', text: 'Dunk from farther out with better finishing for 4 seconds.'},
+  {id: 'medic', name: 'Snack Break', text: 'Clear your injury and restore stamina instantly.'},
+  {id: 'swap', name: 'Switcheroo', text: 'Swap places with your nearest teammate.'},
+  {id: 'blackout', name: 'Disco Fog', text: 'Opponents within 150 steps have worse shot odds for 3 seconds.'},
+  {id: 'dish', name: 'Express Pass', text: 'Your passes fly twice as fast and cannot be intercepted for 4 seconds.'},
+  {id: 'clock', name: 'Clock Goblin', text: 'Add 5 seconds to your team’s shot clock, up to 17.'},
+  {id: 'quake', name: 'Stomp', text: 'Push opponents within 85 steps away and slow them briefly.'},
+  {id: 'pick', name: 'Sticky Fingers', text: 'Take an unprotected ball from an opponent within 55 steps.'},
+  {id: 'giant', name: 'Noodle Arms', text: 'Block from farther away and grab bigger rebounds for 4 seconds.'}
+];
+let ruleset = 'basic';
 const firstNames = ['Jalen', 'Drew', 'Kai', 'Micah', 'Avery', 'Cruz', 'Jules', 'Nico', 'Jordan', 'Remy', 'Sasha', 'Tate'];
 const lastNames = ['Banks', 'Cross', 'Fox', 'Grant', 'King', 'Knight', 'Lane', 'Price', 'Reed', 'Rivers', 'Stone', 'Wells'];
 const attributes = ['Speed', 'Shooting', 'Finishing', 'Defense', 'Passing'];
@@ -119,6 +138,48 @@ function assignPlayers() {
   renderPracticeRoster();
 }
 
+function notifyPhone(profile, text) {
+  if (profile) profile.notice = {text, until: performance.now() + 1500};
+}
+
+function controlPhase(profile, player = players.find(p => p.human === profile)) {
+  if (mode === 'lobby') return 'warmup';
+  if (mode === 'end') return 'lobby';
+  if (mode === 'draft') return profile === draftCaptain(draft.side) ? 'draft' : 'draftWait';
+  if (mode === 'pause') return 'paused';
+  if (sequence?.kind === 'halftime') return 'halftime';
+  if (sequence?.kind === 'recovery') {
+    if (sequence.player !== player) return 'recoveryWait';
+    if (sequence.age < recoveryBrief) return 'recoveryBrief';
+    return sequence.age < recoveryAnswerStart ? 'recoveryPreview' : 'recovery';
+  }
+  if (sequence?.kind === 'free-throw') {
+    return sequence.shooter === player && sequence.result === null ? 'freeThrow' : 'freeThrowWait';
+  }
+  if (sequence || inbound) return 'stoppage';
+  if (owner === player && player) return 'ball';
+  if (!owner && flight?.type !== 'pass') return 'loose';
+  return player?.side === side ? 'offense' : 'defense';
+}
+
+function safePhoneInput(profile, buttons, phase) {
+  const previous = profile.rawButtons || buttons;
+  if (profile.phase !== phase) {
+    const carryTurbo = ['ball', 'offense', 'defense', 'loose'].includes(profile.phase)
+      && ['ball', 'offense', 'defense', 'loose'].includes(phase);
+    profile.blocked = buttons.map((held, i) => held && previous[i] && !(i === 1 && carryTurbo));
+    const player = players.find(p => p.human === profile);
+    if (player) player.charge = 0;
+    if (profile.practice) profile.practice.avatar.charge = 0;
+    profile.phase = phase;
+  }
+  profile.rawButtons = buttons;
+  return buttons.map((held, i) => {
+    if (!held && profile.blocked) profile.blocked[i] = false;
+    return held && !profile.blocked?.[i];
+  });
+}
+
 function switchSide(human) {
   if (humans().filter(p => p.side !== human.side).length < 3) human.side = 1 - human.side;
   assignPlayers();
@@ -136,9 +197,28 @@ function menuAction() {
   for (const [index, profile] of pads) {
     if (!profile.online) pads.delete(index);
   }
+  score.fill(0);
+  fouls.fill(0);
+  for (const profile of humans()) profile.notice = null;
   assignPlayers();
-  for (const p of players) p.cpu = null;
-  draft = {pool: createProspects(), side: 0, index: 0, direction: null};
+  for (const p of players) p.cpu = p.ability = null;
+  const available = [...chaosAbilities];
+  for (let i = available.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [available[i], available[j]] = [available[j], available[i]];
+  }
+  if (ruleset === 'chaos') {
+    for (const p of players.filter(p => p.human)) p.ability = available.pop();
+  }
+  const pool = createProspects();
+  for (const prospect of pool) prospect.ability = ruleset === 'chaos' ? available.pop() : null;
+  if (ruleset === 'basic') {
+    for (const p of players.filter(p => !p.human)) p.cpu = pool.pop();
+    draft = null;
+    beginMatch();
+    return;
+  }
+  draft = {pool, side: 0, index: 0, direction: null};
   const captain = humans()[0];
   nextDraftPick(captain?.side ?? 0);
 }
@@ -169,7 +249,7 @@ function nextDraftPick(preferred) {
     draft.index = 0;
     draft.direction = null;
     mode = 'draft';
-    overlay('CPU DRAFT', `P${draftCaptain(picking).number} picks for ${names[picking]}`, '');
+    overlay('CPU DRAFT', `${draftCaptain(picking).identity?.name || `P${draftCaptain(picking).number}`} picks for ${names[picking]}`, '');
     renderDraft();
     $('title').focus({preventScroll: true});
     return;
@@ -178,6 +258,7 @@ function nextDraftPick(preferred) {
     if (!p.human && !p.cpu) {
       const index = Math.floor(Math.random() * draft.pool.length);
       p.cpu = draft.pool.splice(index, 1)[0];
+      p.ability ||= p.cpu.ability;
     }
   }
   draft = null;
@@ -189,6 +270,8 @@ function pickCPU(index) {
   const slot = openDraftSlot(draft.side);
   if (!slot) return;
   slot.cpu = draft.pool.splice(index, 1)[0];
+  slot.ability = slot.cpu.ability;
+  notifyPhone(draftCaptain(draft.side), `Drafted ${slot.cpu.name} · ${slot.ability.name}`);
   tone([392, 587]);
   nextDraftPick(1 - draft.side);
 }
@@ -209,7 +292,10 @@ function updateDraftSelection() {
 
 function renderDraft() {
   $('draft-rosters').textContent = [0, 1].map(which => {
-    const roster = team(which).map(p => p.human ? p.human.identity?.name || `P${p.human.number}` : p.cpu?.name || 'Open');
+    const roster = team(which).map(p => {
+      const name = p.human ? p.human.identity?.name || `P${p.human.number}` : p.cpu?.name || 'Open';
+      return p.ability ? `${name} (${p.ability.name})` : name;
+    });
     return `${names[which]} · ${roster.join(' / ')}`;
   }).join('  |  ');
   const cards = draft.pool.map((prospect, i) => {
@@ -222,7 +308,8 @@ function renderDraft() {
     const strongest = attributes[prospect.values.indexOf(Math.max(...prospect.values))];
     const weakest = attributes[prospect.values.indexOf(Math.min(...prospect.values))];
     const traits = gameElement('small', {text: `Best: ${strongest} · Weakest: ${weakest}`});
-    card.append(title, role, ratings, traits);
+    const ability = gameElement('small', {className: 'draft-ability', text: `${prospect.ability.name} · ${prospect.ability.text}`});
+    card.append(title, role, ratings, traits, ability);
     card.addEventListener('click', () => pickCPU(i));
     card.addEventListener('focus', () => {
       draft.index = i;
@@ -253,9 +340,10 @@ function beginMatch() {
   time = periodTime;
   particles.length = 0;
   for (const p of players) {
-    Object.assign(p, {fatigue: 0, injury: 0, injuryCooldown: 0});
+    Object.assign(p, {fatigue: 0, injury: 0, injuryCooldown: 0, powerTime: 0, powerCooldown: 0, chilled: 0});
     const human = p.human || p.phoneSeat;
     p.statsLabel = human ? human.identity?.name || `P${human.number}` : p.cpu.name;
+    if (human) human.notice = null;
     p.stats = {points: 0, fieldGoals: 0, shots: 0, threes: 0, threeAttempts: 0,
       freeThrows: 0, freeThrowAttempts: 0, rebounds: 0, assists: 0, steals: 0, blocks: 0, fouls: 0};
   }
@@ -283,9 +371,11 @@ function overlay(title, intro, button) {
   $('lobby').hidden = mode === 'pause' || mode === 'draft';
   $('draft').hidden = mode !== 'draft';
   $('start').hidden = mode === 'draft';
+  $('change-mode').hidden = mode !== 'end';
   $('box-score').hidden = mode !== 'end';
   $('overlay').scrollTop = 0;
   $('pause').disabled = true;
+  if (mode === 'draft') $('status').textContent = 'CHAOS · ' + intro;
 }
 
 function togglePause() {
@@ -332,6 +422,11 @@ function readInputs() {
       }
     }
     if (!profile) continue;
+    const identity = window.couchJoinstick?.profile?.(pad.index);
+    if (identity && (profile.identity?.name !== identity.name || profile.identity?.accent !== identity.accent)) {
+      profile.identity = identity;
+      if (mode === 'lobby') renderPracticeRoster();
+    }
     if (pad.resetInputs) {
       const player = players.find(p => p.human === profile);
       if (player) {
@@ -342,13 +437,21 @@ function readInputs() {
         profile.practice.avatar.charge = 0;
         profile.practice.armed = false;
       }
-      profile.last = buttons;
+      profile.phase = null;
+      profile.rawButtons = buttons;
+      profile.last = [];
       continue;
     }
-    const state = input(pad.axes[0] || 0, pad.axes[1] || 0, buttons, profile.last);
-    profile.last = buttons;
+    const phase = controlPhase(profile);
+    const safe = safePhoneInput(profile, buttons, phase);
+    const state = input(pad.axes[0] || 0, pad.axes[1] || 0, safe, profile.last);
+    profile.last = safe;
     controls.set(profile, state);
     if (mode === 'lobby' || mode === 'end') {
+      if (state.press[3]) {
+        if (mode === 'end') returnToLobby();
+        else if (profile === humans()[0]) selectRuleset(ruleset === 'basic' ? 'chaos' : 'basic');
+      }
       if (state.press[4]) switchSide(profile);
       if (state.press[5]) menuAction();
       if (state.press[2] && mode !== 'live') {
@@ -360,7 +463,12 @@ function readInputs() {
       const direction = couchGrid.direction(state.x, state.y);
       if (direction && direction !== draft.direction) browseDraft(direction);
       draft.direction = direction;
-      if (state.press[0]) pickCPU(draft.index);
+      if (state.press[2] || state.press[3]) {
+        draft.index = (draft.index + (state.press[3] ? 1 : -1) + draft.pool.length) % draft.pool.length;
+        updateDraftSelection();
+      }
+      if (state.press[1]) cancelDraft();
+      else if (state.press[0]) pickCPU(draft.index);
     } else if (state.press[5]) {
       if (mode === 'live' && sequence?.kind === 'halftime') skipHalftime();
       else togglePause();
@@ -395,22 +503,33 @@ function describePhoneControls() {
   const labels = {_default: {mode: inLobby ? humans().length < 6 ? 'join' : 'full' : 'wait'}};
   for (const [index, profile] of pads) {
     const player = players.find(p => p.human === profile);
-    let phase = 'stoppage';
-    if (inLobby) phase = mode === 'lobby' ? 'warmup' : 'lobby';
-    else if (mode === 'draft') phase = profile === draftCaptain(draft.side) ? 'draft' : 'draftWait';
-    else if (mode === 'pause') phase = 'paused';
-    else if (sequence?.kind === 'halftime') phase = 'halftime';
-    else if (sequence?.kind === 'recovery') {
-      phase = sequence.player === player ? (sequence.age < recoveryPreview ? 'recoveryPreview' : 'recovery') : 'recoveryWait';
-    } else if (sequence?.kind === 'free-throw') {
-      phase = sequence.shooter === player && sequence.result === null ? 'freeThrow' : 'freeThrowWait';
-    } else if (!sequence && !inbound) {
-      if (owner === player && player) phase = 'ball';
-      else if (!owner && flight?.type !== 'pass') phase = 'loose';
-      else phase = player?.side === side ? 'offense' : 'defense';
-    }
+    const phase = controlPhase(profile, player);
     labels[index] = {player: profile.identity?.name || `P${profile.number}`, team: names[profile.side], mode: phase};
-    if (phase === 'recovery') labels[index].progress = sequence.step;
+    labels[index].accent = profile.identity?.accent;
+    labels[index].notice = profile.notice?.until > performance.now() ? profile.notice.text : null;
+    if (mode === 'draft' && phase === 'draft') {
+      const prospect = draft.pool[draft.index];
+      labels[index].prospect = {name: prospect.name, role: prospect.role, ratings: prospect.values,
+        ability: prospect.ability, position: draft.index + 1, total: draft.pool.length};
+    }
+    if (phase.startsWith('recovery')) {
+      labels[index].progress = sequence.step;
+      labels[index].seconds = Math.ceil(Math.max(0, recoveryAnswerStart + recoveryWindow - sequence.age));
+    }
+    if (phase === 'freeThrow') labels[index].getReady = Math.ceil(Math.max(0, freeThrowStart - sequence.age));
+    if (inLobby) {
+      labels[index].ruleset = ruleset;
+      labels[index].canSelectMode = mode === 'lobby' && profile === humans()[0];
+      labels[index].final = mode === 'end';
+      if (mode === 'end' && player?.stats) labels[index].result = {
+        points: player.stats.points, rebounds: player.stats.rebounds, assists: player.stats.assists
+      };
+    }
+    if (ruleset === 'chaos' && player?.ability) {
+      labels[index].ability = {name: player.ability.name, text: player.ability.text,
+        seconds: Math.ceil(player.powerCooldown || 0),
+        ready: mode === 'live' && !sequence && !inbound && time > 0};
+    }
   }
   return labels;
 }
@@ -448,17 +567,119 @@ function pass(p, state) {
   };
   const [a, b] = mates;
   const target = value(a) >= value(b) ? a : b;
+  const express = powered(p, 'dish');
   const duration = clamp(distance(p, target) / (760 + ((p.cpu?.passing ?? 72) - 72) * 6), .12, .45);
-  flight = {type: 'pass', p, target, x: p.x, y: p.y, age: 0, duration};
+  flight = {type: 'pass', p, target, x: p.x, y: p.y, age: 0, duration: express ? duration / 2 : duration, express};
   owner = null;
   p.charge = 0;
   tone([330]);
 }
 
+function selectRuleset(next) {
+  if (mode !== 'lobby' || !['basic', 'chaos'].includes(next)) return;
+  ruleset = next;
+  $('mode-basic').setAttribute('aria-pressed', String(next === 'basic'));
+  $('mode-chaos').setAttribute('aria-pressed', String(next === 'chaos'));
+  $('warmup-start').textContent = next === 'basic' ? 'TIP OFF' : 'DRAFT & TIP OFF';
+  $('mode-description').textContent = next === 'basic'
+    ? 'Classic 3-on-3. Jump straight in with CPU teammates.'
+    : 'Draft CPU teammates. Everyone gets a unique power. Recharge during live play.';
+}
+
+function returnToLobby() {
+  if (mode !== 'end') return;
+  for (const profile of humans()) profile.notice = null;
+  mode = 'lobby';
+  sequence = null;
+  layout(0);
+  assignPlayers();
+  overlay('TIP-OFF', 'Choose a mode and warm up.', 'TIP OFF');
+}
+
+function powered(p, id) {
+  return ruleset === 'chaos' && p.ability?.id === id && p.powerTime > 0;
+}
+
+function activateAbility(p) {
+  if (ruleset !== 'chaos' || mode !== 'live' || sequence || inbound || time <= 0 || !p.ability) return false;
+  if (p.powerCooldown > 0) {
+    notifyPhone(p.human, `Power ready in ${Math.ceil(p.powerCooldown)}s`);
+    return false;
+  }
+  const opponent = owner?.side !== p.side ? owner : null;
+  const id = p.ability.id;
+  if (id === 'clock' && side !== p.side) {
+    notifyPhone(p.human, 'Clock Goblin needs your team to have the ball');
+    return false;
+  }
+  if (id === 'pick' && (!opponent || distance(p, opponent) > 55 || powered(opponent, 'bubble'))) {
+    notifyPhone(p.human, 'Get closer to an unprotected opponent with the ball');
+    return false;
+  }
+  p.powerCooldown = 18;
+  p.powerTime = ['sniper', 'magnet', 'spring', 'dish', 'giant'].includes(id) ? 4 : 3;
+  switch (id) {
+    case 'medic':
+      p.injury = p.fatigue = 0;
+      p.energy = 1;
+      break;
+    case 'swap': {
+      const mate = nearest(p, team(p.side).filter(q => q !== p));
+      [p.x, mate.x] = [mate.x, p.x];
+      [p.y, mate.y] = [mate.y, p.y];
+      break;
+    }
+    case 'freeze':
+      for (const enemy of team(1 - p.side)) if (distance(p, enemy) <= 100) enemy.chilled = 2;
+      break;
+    case 'quake':
+      for (const enemy of team(1 - p.side)) {
+        const d = distance(p, enemy);
+        if (d > 85) continue;
+        const angle = d ? Math.atan2(enemy.y - p.y, enemy.x - p.x) : (p.side ? Math.PI : 0);
+        enemy.x = clamp(enemy.x + Math.cos(angle) * 55, 77, 883);
+        enemy.y = clamp(enemy.y + Math.sin(angle) * 55, 54, 446);
+        enemy.chilled = 1;
+      }
+      break;
+    case 'clock':
+      shotClock = Math.min(17, shotClock + 5);
+      break;
+    case 'pick':
+      opponent.charge = 0;
+      gainBall(p);
+      p.stats.steals++;
+      break;
+  }
+  notifyPhone(p.human, `${p.ability.name} activated`);
+  burst(p, colors[p.side]);
+  call(`${p.statsLabel} · ${p.ability.name.toUpperCase()}`, .85);
+  tone([330, 660, 880]);
+  return true;
+}
+
+function cpuWantsAbility(p) {
+  switch (p.ability?.id) {
+    case 'sniper':
+    case 'spring': return owner === p && (p.charge > 0 || distance(p, rim(p.side)) < 110);
+    case 'clock': return side === p.side && shotClock < 5;
+    case 'medic': return p.fatigue > .3 || p.injury > 0;
+    case 'magnet': return Boolean(loose);
+    case 'giant': return Boolean(loose || flight?.type === 'shot');
+    case 'pick': return owner && owner.side !== p.side && distance(p, owner) <= 55;
+    case 'dish': return owner === p && team(p.side).some(q => q !== p && q.request > 0);
+    case 'bubble': return owner === p && distance(p, nearest(p, team(1 - p.side))) < 45;
+    case 'freeze':
+    case 'blackout':
+    case 'quake': return owner?.side !== p.side && owner && distance(p, owner) < 85;
+    default: return owner === p && possessionAge > 2;
+  }
+}
+
 function resetPractice(profile, player) {
   profile.practice = {
     avatar: {...player, x: profile.side ? 290 : 670, y: 130 + player.slot * 120,
-      human: profile, charge: 0, jump: 0, vx: 0, vy: 0, energy: 1, fatigue: 0, injury: 0, swipe: 0},
+      human: profile, charge: 0, jump: 0, vx: 0, vy: 0, energy: 1, fatigue: 0, injury: 0, swipe: 0, ability: null, powerTime: 0},
     attempts: 0, makes: 0, flight: null, cooldown: 0, armed: false, feedback: 'Try a shot'
   };
 }
@@ -473,6 +694,7 @@ function renderPracticeRoster() {
       const row = gameElement('div', {className: 'warmup-seat'});
       if (human) {
         const practice = human.practice;
+        row.style.borderLeft = `3px solid ${human.identity?.accent || colors[which]}`;
         row.append(gameElement('b', {text: `P${human.number} · ${human.identity?.name || 'Phone player'}`}));
         row.append(gameElement('small', {text: human.online
           ? `${practice.makes}/${practice.attempts} made · ${practice.feedback}` : 'Phone offline · reconnect to return'}));
@@ -589,12 +811,14 @@ function dunkOdds(shooter, goal) {
 function shotAttempt(p, cpu, contested = true) {
   const target = rim(p.side);
   const range = distance(p, target);
-  const dunk = range <= dunkRange;
+  const dunk = range <= (powered(p, 'spring') ? 90 : dunkRange);
   const tier = shotTier(range);
-  const grade = dunk ? 0 : cpu ? cpuReleaseGrade(p) : releaseGrade(p.charge, tier);
+  const grade = dunk || powered(p, 'sniper') ? 0 : cpu ? cpuReleaseGrade(p) : releaseGrade(p.charge, tier);
   const pressure = contested ? distance(p, nearest(p, team(1 - p.side))) : Infinity;
   const chance = dunk ? contested ? dunkOdds(p, target) : .99 : tier.odds[grade] * (pressure < 35 ? .72 : 1);
-  const made = Math.random() < chance;
+  const boost = powered(p, 'sniper') ? .14 : powered(p, 'spring') && dunk ? .24 : 0;
+  const fog = contested && team(1 - p.side).some(q => powered(q, 'blackout') && distance(p, q) < 150) ? .55 : 1;
+  const made = Math.random() < clamp((chance + boost) * fog, 0, .99);
   const end = made ? target : {x: target.x + (p.side ? 1 : -1) * (28 + Math.random() * 42),
     y: clamp(center + (Math.random() - .5) * 190, 65, 435)};
   return {type: 'shot', p, x: p.x, y: p.y, end, points: isThree(p) ? 3 : 2, dunk, made, grade, tier,
@@ -605,10 +829,10 @@ function shot(p, cpu = false) {
   const target = rim(p.side);
   const range = distance(p, target);
   const points = isThree(p) ? 3 : 2;
-  const dunk = range <= dunkRange;
+  const dunk = range <= (powered(p, 'spring') ? 90 : dunkRange);
   const contact = team(1 - p.side).find(q =>
     distance(p, q) < 25 && (q.swipe > 0 || (q.jump > 0 && isBehind(q, p))));
-  if (contact) {
+  if (contact && !powered(p, 'bubble')) {
     whistle('SHOOTING FOUL', contact, p, points);
     return;
   }
@@ -619,7 +843,9 @@ function shot(p, cpu = false) {
   const passer = assist?.receiver === p && possessionAge <= assist.expiresAfter
     ? assist.passer : null;
   assist = null;
-  flight = {...attempt, passer};
+  flight = {...attempt, passer, protected: powered(p, 'bubble')};
+  notifyPhone(p.human, attempt.dunk ? 'Dunk attempt' : `${tier.name} · ${releaseNames[grade]} release`);
+  if (powered(p, 'sniper')) p.powerTime = 0;
   owner = null;
   p.charge = 0;
   if (dunk) p.jump = .36;
@@ -628,6 +854,7 @@ function shot(p, cpu = false) {
 }
 
 function action(p, state, dt) {
+  if (state.press[4]) activateAbility(p);
   if (owner === p) {
     if (state.press[3]) pass(p, state);
     else if (state.down[0] && (p.charge || p.ready <= 0)) p.charge = Math.min(p.charge + dt, maxCharge);
@@ -652,7 +879,7 @@ function isBehind(defender, attacker) {
 function swipe(p) {
   p.swipe = .24;
   p.ready = .82;
-  if (!owner || owner.side === p.side || distance(owner, p) >= 27) return;
+  if (!owner || owner.side === p.side || distance(owner, p) >= 27 || powered(owner, 'bubble')) return;
   if (owner.charge >= .26) {
     whistle('SHOOTING FOUL', p, owner, isThree(owner) ? 3 : 2);
   } else if (isBehind(p, owner) && distance(p, owner) < 23) {
@@ -668,6 +895,7 @@ function swipe(p) {
 }
 
 function simulateCPU(p, dt) {
+  if (ruleset === 'chaos' && p.powerCooldown <= 0 && cpuWantsAbility(p)) activateAbility(p);
   const goal = rim(p.side);
   const attack = p.side ? -1 : 1;
   const pace = [118, 143, 166][difficulty] + ((p.cpu?.speed ?? 75) - 75) * 1.12;
@@ -733,8 +961,9 @@ function advanceBall(dt) {
   if (loose) {
     if (time <= 0) return;
     loose.age += dt;
-    const p = nearest(loose, players);
-    if (distance(p, loose) < 19 || loose.age > 2) {
+    const seekers = players.filter(p => distance(p, loose) < (powered(p, 'magnet') ? 85 : powered(p, 'giant') ? 42 : 19));
+    const p = nearest(loose, seekers.length ? seekers : players);
+    if (seekers.length || loose.age > 2) {
       const changed = side !== p.side;
       gainBall(p);
       p.stats.rebounds++;
@@ -749,7 +978,7 @@ function advanceBall(dt) {
   const point = ballPosition(f);
   if (f.type === 'pass') {
     const defender = nearest(point, team(1 - f.p.side));
-    if (f.age > .08 && distance(point, defender) < (defender.swipe ? 24 : 12)) {
+    if (!f.express && f.age > .08 && distance(point, defender) < (defender.swipe ? 24 : 12)) {
       gainBall(defender);
       defender.stats.steals++;
       call('INTERCEPTED!');
@@ -761,8 +990,8 @@ function advanceBall(dt) {
   }
 
   const blocker = team(1 - f.p.side).find(p =>
-    p.jump > 0 && f.age < .19
-    && distance(p, f) < 43 + ((p.cpu?.defense ?? 72) - 72) * .35 && distance(p, point) < 46);
+    !f.protected && p.jump > 0 && f.age < .19
+    && distance(p, f) < (powered(p, 'giant') ? 80 : 43) + ((p.cpu?.defense ?? 72) - 72) * .35 && distance(p, point) < (powered(p, 'giant') ? 80 : 46));
   if (blocker) {
     if (time === 0) periodResult = 'SHOT BLOCKED';
     blocker.stats.blocks++;
@@ -779,10 +1008,12 @@ function advanceBall(dt) {
   if (!f.made) {
     if (time === 0) periodResult = 'OFF THE RIM';
     loose = {...f.end, age: 0};
+    notifyPhone(f.p.human || f.p.phoneSeat, f.dunk ? 'Dunk rimmed out' : 'Shot missed');
     call(f.dunk ? 'DUNK RIMMED OUT' : 'OFF THE RIM', .66);
     tone([175]);
     return;
   }
+  notifyPhone(f.p.human || f.p.phoneSeat, `BUCKET · +${f.points}`);
   score[f.p.side] += f.points;
   f.p.stats.points += f.points;
   benchCheer[f.p.side] = f.dunk ? 2.3 : f.points === 3 ? 1.9 : 1.25;
@@ -854,7 +1085,7 @@ function startNextQuarter() {
 }
 
 function mobility(p) {
-  return (1 - (p.fatigue || 0) * .24) * (p.injury > 0 ? .72 : 1);
+  return (1 - (p.fatigue || 0) * .24) * (p.injury > 0 ? .72 : 1) * (p.chilled > 0 ? .55 : 1) * (powered(p, 'rocket') ? 1.45 : 1);
 }
 
 function updateCondition(p, dt, sprinting) {
@@ -930,7 +1161,7 @@ function update(dt) {
   }
   if (time > 0) {
     for (const p of players) {
-      for (const timer of ['ready', 'jump', 'swipe', 'request']) p[timer] = Math.max(0, p[timer] - dt);
+      for (const timer of ['ready', 'jump', 'swipe', 'request', 'powerTime', 'powerCooldown', 'chilled']) p[timer] = Math.max(0, p[timer] - dt);
       let sprinting = false;
       if (p.human) {
         const state = controls.get(p.human) || empty;
@@ -1091,6 +1322,9 @@ function startRecovery(player) {
 }
 
 function finishRecovery(completed = 0) {
+  const player = sequence?.player;
+  notifyPhone(player?.human || player?.phoneSeat, completed === 3 ? 'RECOVERED · back to the court'
+    : `Recovery ended · ${completed}/3 correct · play continues`);
   sequence = null;
   call(completed ? `PLAY ON · RECOVERY ${completed}/3` : 'PLAY ON', .85);
   tone([555, 740]);
@@ -1098,20 +1332,26 @@ function finishRecovery(completed = 0) {
 
 function advanceRecovery(active) {
   const {player, order} = active;
-  if (!player.human?.online || active.age >= recoveryPreview + recoveryWindow) {
+  if (!player.human?.online || active.age >= recoveryAnswerStart + recoveryWindow) {
     finishRecovery(active.step);
     return;
   }
-  if (active.age < recoveryPreview) return;
+  if (active.age < recoveryBrief) {
+    if (controls.get(player.human)?.press[0]) active.age = recoveryBrief;
+    return;
+  }
+  if (active.age < recoveryAnswerStart) return;
   const pressed = controls.get(player.human)?.press;
   const tapped = recoveryActions.filter(([button]) => pressed?.[button]);
   if (!tapped.length) return;
   if (tapped.length === 1 && tapped[0] === order[active.step]) {
     active.step++;
+    notifyPhone(player.human, `${active.step}/3 correct · recovering faster`);
     player.injury = Math.max(0, player.injury - 1.25);
     if (active.step === order.length) finishRecovery(active.step);
     else tone([430 + 100 * active.step]);
   } else {
+    notifyPhone(player.human, 'Wrong button · try again · 0.45s lost');
     active.age += .45;
     active.mistakeUntil = active.age + .3;
     tone([200]);
@@ -1133,8 +1373,9 @@ function advanceFreeThrow(active) {
   const {shooter} = active;
   if (active.result === null) {
     const pressed = controls.get(shooter.human)?.press[0];
+    if (pressed && active.age < freeThrowStart) notifyPhone(shooter.human, 'Get ready · wait for the shared meter');
     const timed = shooter.human && pressed && active.age >= freeThrowStart;
-    const automatic = active.age >= (shooter.human ? 2.75 : 1.02);
+    const automatic = active.age >= freeThrowStart + (shooter.human ? 2.4 : .67);
     if (!timed && !automatic) return;
     const needle = freeThrowNeedle(active.age);
     active.result = timed ? Math.abs(needle - .5) <= freeThrowWindow
@@ -1145,6 +1386,7 @@ function advanceFreeThrow(active) {
   }
   if (active.age >= .57 && !active.counted) {
     active.counted = true;
+    notifyPhone(shooter.human || shooter.phoneSeat, active.result ? 'Free throw good · +1' : 'Free throw missed');
     shooter.stats.freeThrowAttempts++;
     if (active.result) {
       score[shooter.side]++;
@@ -1282,6 +1524,11 @@ function drawPlayer(p, now, hasBall = p === owner) {
   const stride = pace > 20 ? Math.sin(now * .026 + p.slot) * 4 : 0;
   const top = y - raised;
   circle(ctx, x, y + 5, 13, '#25142660');
+  if (p.powerTime > 0 && ruleset === 'chaos') {
+    ctx.lineWidth = powered(p, 'bubble') ? 3 : 1;
+    circle(ctx, x, top, powered(p, 'bubble') ? 23 : 18, '#fff0aa16', powered(p, 'blackout') ? '#ce9eff' : '#ffe59a');
+  }
+  if (p.chilled > 0) lettering(ctx, 'ICE', x, top + 30, 9, '#94eaf8');
   if (p.human || hasBall) {
     ctx.lineWidth = 2;
     circle(ctx, x, y + 2, 16, null, hasBall ? '#fff3bc' : colors[p.side]);
@@ -1320,6 +1567,10 @@ function drawPlayer(p, now, hasBall = p === owner) {
     rect(ctx, '#49243a', x + 10, top - 20, 13, 13);
     rect(ctx, '#ffd5ca', x + 15, top - 18, 3, 9);
     rect(ctx, '#ffd5ca', x + 12, top - 15, 9, 3);
+  }
+  if (ruleset === 'chaos' && p.ability && (mode === 'live' || mode === 'pause')) {
+    lettering(ctx, p.powerTime > 0 ? p.ability.name.toUpperCase() : p.powerCooldown > 0
+      ? `${Math.ceil(p.powerCooldown)}s` : 'POWER READY', x, top + 29, 9, '#ffe59a');
   }
   if (p.request) lettering(ctx, 'PASS!', x, top - 46, 12, '#fff0aa');
   if (p.charge && p.human) {
@@ -1516,7 +1767,7 @@ function drawFreeThrow(active, now) {
   lineup.push({...shooter, x: shooterX, y: center, vx: 0, vy: 0, jump: 0, swipe: 0, charge: 0, request: 0});
   drawScene(now, {players: lineup, ref: {x: goal.x - direction * 31, y: 360}, ball});
   const hint = result === null
-    ? shooter.human ? 'TAP FREE THROW IN THE GREEN' : 'CPU AT THE LINE'
+    ? shooter.human ? age < freeThrowStart ? 'GET READY · WATCH THE SHARED METER' : 'TAP FREE THROW IN THE GREEN' : 'CPU AT THE LINE'
     : age < .57 ? names[shooter.side] : result ? 'GOOD · +1 POINT' : 'MISSED';
   caption(`FREE THROW ${total - remaining + 1} / ${total}`, hint);
   if (result === null) {
@@ -1532,8 +1783,9 @@ function drawFreeThrow(active, now) {
 function drawRecovery(active, now) {
   drawScene(now);
   rect(ctx, '#1c1125e9', 0, 0, 960, 500);
-  const preview = active.age < recoveryPreview;
-  const remaining = Math.max(0, recoveryPreview + recoveryWindow - active.age);
+  const briefing = active.age < recoveryBrief;
+  const preview = active.age >= recoveryBrief && active.age < recoveryAnswerStart;
+  const remaining = Math.max(0, recoveryAnswerStart + recoveryWindow - active.age);
   lettering(ctx, `${active.player.statsLabel} · INJURY TIMEOUT`, 480, 101, 21, '#ffc267');
   lettering(ctx, 'QUICK RECOVERY', 480, 150, 49, '#fff1d6');
   for (const [i, [, label]] of active.order.entries()) {
@@ -1542,11 +1794,11 @@ function drawRecovery(active, now) {
     rect(ctx, done ? '#265750' : '#473049', x, 209, 182, 78);
     lettering(ctx, preview || done ? label : '?', x + 91, 249, 27, done ? '#a3ffe8' : '#fff1d6');
   }
-  if (!preview) {
+  if (!briefing && !preview) {
     rect(ctx, '#473049', 197, 309, 566, 8);
-    rect(ctx, '#ffc267', 197, 309, 566 * remaining / recoveryWindow, 8);
+    rect(ctx, '#ffc267', 197, 309, 566 * clamp(remaining / recoveryWindow, 0, 1), 8);
   }
-  const hint = preview ? 'MEMORIZE THE ORDER' : active.age < active.mistakeUntil ? 'WRONG BUTTON · TRY AGAIN'
+  const hint = briefing ? 'READ YOUR PHONE · TAP READY TO START' : preview ? 'MEMORIZE THIS ORDER ON THE SHARED SCREEN' : active.age < active.mistakeUntil ? 'WRONG BUTTON · TRY AGAIN'
     : `REPEAT IT ON YOUR PHONE · ${active.step}/3 · ${remaining.toFixed(1)}s`;
   lettering(ctx, hint, 480, 358, 20, '#fff1d6');
   lettering(ctx, 'EACH CORRECT TAP SHORTENS THE INJURY', 480, 400, 15, '#ffc267');
@@ -1600,6 +1852,9 @@ function draw(now) {
 
 $('start').addEventListener('click', menuAction);
 $('warmup-start').addEventListener('click', menuAction);
+$('mode-basic').addEventListener('click', () => selectRuleset('basic'));
+$('mode-chaos').addEventListener('click', () => selectRuleset('chaos'));
+$('change-mode').addEventListener('click', returnToLobby);
 $('draft-back').addEventListener('click', cancelDraft);
 $('pause').addEventListener('click', togglePause);
 $('skip-show').addEventListener('click', skipHalftime);
@@ -1618,6 +1873,7 @@ window.addEventListener('blur', () => {
 
 const warmupPanel = $('warmup-panel');
 warmupPanel.append($('lobby'));
+selectRuleset('basic');
 window.couchJoinstick?.describe(describePhoneControls);
 paintCourt();
 assignPlayers();
@@ -1626,7 +1882,7 @@ let previous = performance.now();
 function frame(now) {
   const dt = clamp((now - previous) / 1000, 0, .035);
   previous = now;
-  if (document.hasFocus()) readInputs();
+  readInputs();
   update(dt);
   draw(now);
   requestAnimationFrame(frame);
