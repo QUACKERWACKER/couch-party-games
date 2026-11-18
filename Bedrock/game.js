@@ -8,7 +8,21 @@ const ui = Object.fromEntries(['overlay','eyebrow','title','brief','roster','pro
   .map(id => [id, document.getElementById(id)]));
 const W = 1248, H = 536, TOP = 83, STEP = 4;
 const NX = W/STEP, NY = H/STEP;
-const CORE = 94, CAPTURE = 9;
+const CORE = 94;
+const maps = [
+  {name:'FAULTLINE',detail:'A direct clash through the mountain.',bases:[264,264]},
+  {name:'SWITCHBACK',detail:'Climb and descend through offset caverns.',bases:[196,340]},
+  {name:'FORKED DEPTHS',detail:'Two approaches. Choose a flank.',bases:[264,264]}
+];
+const gadgets = [
+  {name:'DASH',detail:'Burst in your aim direction.',cooldown:10},
+  {name:'STICKY BOMB',detail:'Sticks to rock. Explodes after one second.',cooldown:12},
+  {name:'SHIELD',detail:'Block damage for two seconds.',cooldown:15}
+];
+const wins=[0,0];
+let mapIndex=-1, phaseTime=0, overtime=false, crystals=[], bombs=[];
+let practiceSeen=false, muted=false, reducedMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const developerControls=new URLSearchParams(location.search).has('dev');
 const ORDINARY = 0, BEDROCK = 1, FORTIFICATION = 2;
 const AUTO_JET_Y = -.38;
 const STEP_UP = 16, STEP_DOWN = 5;
@@ -16,7 +30,7 @@ const colors = ['#67f2d3','#ffab65'];
 const names = ['MINT','EMBER'];
 const minionTypes = [
   {name:'BORER',cost:12,hp:58,blurb:'Digs and earns ore'},
-  {name:'RAIDER',cost:18,hp:42,blurb:'Follows and shoots'},
+  {name:'HUNTER',cost:18,hp:42,blurb:'Follows you, or holds your command position'},
   {name:'SENTRY',cost:22,hp:104,blurb:'Holds this position'}
 ];
 const upgradeTypes = [
@@ -32,7 +46,7 @@ let roster=[], host=null, sequence=0, mode='lobby', previous=new Map();
 let teams, players=[], units=[], shots=[], particles=[], time=0, breachAt=null, result;
 let message='', messageUntil=0, audio;
 let terrain, rock, ore, terrainImage, dirty=true, tunnelChanged=true, previousScan=0;
-let round=0, caches=[], relay=null, seatsPerTeam=1;
+let round=0, caches=[], relay=null;
 ground.width=NX;
 ground.height=NY;
 
@@ -57,7 +71,7 @@ function makeTerrain() {
   rock=new Uint8Array(NX*NY);
   ore=new Uint8Array(NX*NY);
   terrainImage=terrainCtx.createImageData(NX,NY);
-  const crewFactor=1+Math.min(3,teamSize()-1)*.40;
+  const crewFactor=1+Math.min(3,teamSize()-1)*.66;
   for (let iy=0;iy<NY;iy++) {
     const y=iy*STEP+2;
     const seam=Math.sin(y*.028+round)*23+Math.sin(y*.081)*12;
@@ -65,24 +79,26 @@ function makeTerrain() {
     const coreVariation=Math.cos(y*.038+round)*38;
     for (let ix=0;ix<NX;ix++) {
       const x=ix*STEP+2,i=iy*NX+ix;
-      const depth=Math.min(x,W-x);
-      const grain=noise(Math.min(ix,NX-1-ix),iy);
+      const side=Number(x>W/2), depth=Math.min(x,W-x);
+      const baseY=lift[side].y;
+            const cavern=mapIndex===2 && depth>230 && depth<W/2-CORE && Math.min(Math.abs(y-170),Math.abs(y-366))<25;
+
+      const grain=noise(Math.min(ix,NX-1-ix),ix<NX/2 ? iy : NY-1-iy);
       const pocket=depth>142 && depth<W/2-CORE &&
         Math.sin(depth*.025+y*.013+round)*Math.cos(y*.044-depth*.009)>.82;
-      const base=depth<104 && y>210 && y<283 ||
-        depth<143 && Math.abs(y-266)<17 ||
-        depth<58 && y>166 && y<255 ||
-        depth>85 && depth<110 && y>279 && y<356;
+      const base=depth<105 && y>baseY-53 && y<baseY+19 ||
+        depth<143 && Math.abs(y-baseY)<17 ||
+        depth<58 && y>baseY-98 && y<baseY-9;
       const edge=x<7 || x>W-7 || y<8 || y>H-8;
-      const liftPlatform=Math.abs(depth-55)<34 && y>=284 && y<296;
-      const crystal=Math.sin(depth*.065+y*.063+round)*Math.sin(depth*.027-y*.075)>.60;
+      const liftPlatform=Math.abs(depth-55)<34 && y>=baseY+20 && y<baseY+32;
+      const crystal=Math.sin(depth*.065+(side ? H-y : y)*.063+round)*Math.sin(depth*.027-(side ? H-y : y)*.075)>.60;
       const core=inCore(x);
       const fort=depth>=143 && depth<fortDepth && !pocket;
       rock[i]=core ? BEDROCK : fort ? FORTIFICATION : ORDINARY;
-      terrain[i]=edge || liftPlatform ? Infinity : base || pocket ? 0 :
-        core ? (460+grain*54+coreVariation)*crewFactor :
-        fort ? 133+grain*22 :
-        depth>250+seam && grain>.39 ? 12 : 8;
+      terrain[i]=edge || liftPlatform ? Infinity : base || (pocket || cavern) && !inCore(x) ? 0 :
+        core ? (430+grain*35+coreVariation*.4)*crewFactor*(mapIndex===2 ? .82 : 1) :
+        fort ? (150+grain*20)*Math.sqrt(crewFactor) :
+        depth>250+seam && grain>.39 ? 11 : 7;
       if (!edge && !liftPlatform && !core && !fort && !base && !pocket && crystal) ore[i]=1;
       paintCell(ix,iy);
     }
@@ -114,7 +130,7 @@ function fits(x,y,r) {
     !solid(x-d,y-d) && !solid(x+d,y-d) && !solid(x-d,y+d) && !solid(x+d,y+d);
 }
 
-function carve(x,y,r,strength,side,drillLevel=0) {
+function carve(x,y,r,strength,side,drillLevel=0,earner=null) {
   const left=clamp(Math.floor((x-r)/STEP),1,NX-2), right=clamp(Math.floor((x+r)/STEP),1,NX-2);
   const top=clamp(Math.floor((y-r)/STEP),1,NY-2), bottom=clamp(Math.floor((y+r)/STEP),1,NY-2);
   let dug=0, enriched=0, worked=0;
@@ -140,7 +156,11 @@ function carve(x,y,r,strength,side,drillLevel=0) {
   }
   if (dug) tunnelChanged=true;
   if (dug && teams) {
-    teams[side].ore+=dug*.024+enriched*.205;
+    const miner=earner || players.find(p=>p.side===side);
+    if (miner) {
+      miner.ore+=dug*.025+enriched*.15;
+      miner.mined+=dug;
+    }
     if (dug>5) burst(x,y,enriched>3 ? '#ffce7d' : '#ad7685',3);
   }
   return worked;
@@ -149,6 +169,7 @@ function carve(x,y,r,strength,side,drillLevel=0) {
 const bedrockSounds={dig:[135,68,.07],shot:[235,62,.13],buy:[433,855,.15],alarm:[180,520,.45],win:[440,905,.65]};
 
 function sound(name) {
+  if (muted) return;
   const [start,end,length]=bedrockSounds[name];
   playGameTone(audio,start,length,name==='shot' ? 'triangle' : 'sine',.035,0,end);
 }
@@ -160,7 +181,7 @@ function enableSound() {
 document.addEventListener('pointerdown',enableSound);
 document.addEventListener('keydown',event=>{
   if (event.altKey || event.metaKey || event.ctrlKey) return;
-  if (!['Enter','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','KeyZ','KeyX','KeyC','KeyV','Space','KeyA','KeyS'].includes(event.code)) return;
+  if (!['Enter','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','KeyZ','KeyX','KeyC','KeyV','Space','KeyA','KeyS','KeyD'].includes(event.code)) return;
   if (event.code==='Enter' && document.activeElement?.tagName==='A') return;
   event.preventDefault();
   keys.add(event.code);
@@ -173,36 +194,41 @@ window.addEventListener('gamepadconnected',enableSound);
 function input() {
   const current=new Map();
   const has=key=>Number(keys.has(key));
-  current.set('keyboard',{
+  if (developerControls) current.set('keyboard',{
     x:has('ArrowRight')-has('ArrowLeft'), y:has('ArrowDown')-has('ArrowUp'),
-    b:['KeyZ','KeyX','KeyC','KeyV','Space','KeyA','', 'KeyS'].map(key=>keys.has(key)),
+    b:['KeyZ','KeyX','KeyC','KeyV','Space','KeyA','KeyD', 'KeyS'].map(key=>keys.has(key)),
     autoJet:keys.has('ArrowUp'),
     join:keys.has('Enter')
   });
   for (const pad of gameControllerInputs()) {
     if (!pad?.connected || pad.axes.length<2 || pad.buttons.length<4) continue;
+    if (!developerControls && !window.couchJoinstick?.label(pad.index)) continue;
     const b=pad.buttons.slice(0,8).map(button=>button.pressed || button.value>.55);
     const [x,y]=pad.axes;
-    current.set('pad:'+pad.index,{x,y,b,autoJet:y<AUTO_JET_Y,join:b.slice(0,4).some(Boolean)});
+    const aimX=pad.axes[2] || 0, aimY=pad.axes[3] || 0;
+    const aimLength=Math.hypot(aimX,aimY);
+    const aim=aimLength>.20 ? {ax:aimX/aimLength,ay:aimY/aimLength} : {};
+    current.set('pad:'+pad.index,{x,y,b,...aim,independent:Boolean(window.couchJoinstick?.label(pad.index)),autoJet:y<AUTO_JET_Y,join:b.slice(0,4).some(Boolean)});
   }
   return current;
 }
 
 function overlay() {
-  ui.overlay.hidden=mode==='play';
-  if (mode==='play') return;
+  ui.overlay.hidden=mode==='play' || mode==='practice';
+  if (mode==='play' || mode==='practice') return;
   const won=mode==='result';
-  ui.eyebrow.textContent=won ? 'RIVAL LIFT CAPTURED' : 'SIDE-VIEW MINING WAR';
-  ui.title.innerHTML=won ? names[result]+'<span>WINS</span>' : 'BEDROCK<span>RIVALS</span>';
-  ui.brief.innerHTML=won ? 'Lift captured in '+timer(time)+'.' :
-    'Mine ore, upgrade your drill, and break through the bedrock.<br>Take out the lift guard and capture the rival lift.';
+  ui.eyebrow.textContent=won ? 'CRYSTAL RUN COMPLETE' : mode==='loadout' ? 'PICK A GADGET ON YOUR PHONE' : 'STEAL · ESCAPE · DELIVER';
+  ui.title.innerHTML=won ? (result===null ? 'ROUND<span>DRAW</span>' : names[result]+'<span>WINS</span>') : 'BEDROCK<span>RIVALS</span>';
+  ui.brief.innerHTML=won ? resultSummary()
+    : mode==='loadout' ? 'Choose your gadget · '+Math.ceil(phaseTime)+'s<br>'+maps[(mapIndex+1)%maps.length].name+' · '+maps[(mapIndex+1)%maps.length].detail
+    : 'Mine a route. Steal their crystal. Bring it home.<br>Pair your phone to join. Up jets automatically.';
   ui.roster.replaceChildren();
   function badge(label,side) {
     const item = gameElement('span', {text: label});
     item.style.color=colors[side];
     ui.roster.append(item);
   }
-  roster.forEach(p=>badge((window.couchJoinstick?.profile?.(p.index)?.name || 'P'+p.number)+' · '+names[p.side]+(p.id===host ? ' · HOST' : ''),p.side));
+  roster.forEach(p=>badge((window.couchJoinstick?.profile?.(p.index)?.name || 'P'+p.number)+' · '+names[p.side]+' · '+(p.ready ? 'READY' : 'PICKING')+(p.id===host ? ' · HOST' : ''),p.side));
   const size=teamSize();
   for (let side=0;side<2;side++) {
     const count=size-roster.filter(p=>p.side===side).length;
@@ -213,13 +239,12 @@ function overlay() {
   const confirm=host==='keyboard' ? 'Enter / Z' : 'A / ✕';
   ui.prompt.textContent=!host ? 'Press any face button to join'
     : hostOnPhone ? 'Host · '+action+' on phone' : 'Host · '+confirm+' '+action.toLowerCase();
-  ui.hint.textContent=roster.some(p=>p.id==='keyboard') ?
-    'Arrows move / aim · Z dig · X fire · C summon · V upgrade · A / S select · '+size+'v'+size+' · Host C to change size' :
-    host ? size+'v'+size+(hostOnPhone ? ' · Host changes size on phone' : ' · Host X / □ to change size · B / ○ to leave')
-      : 'Keyboard optional · Enter to join';
+  ui.hint.textContent=developerControls ? 'Developer controls · arrows / Z dig / X fire / D gadget / C team'
+    : 'Ready on your phone · '+size+'v'+size+' · CPUs fill empty seats';
+
 }
 function teamSize() {
-  return Math.max(seatsPerTeam,...[0,1].map(side=>roster.filter(p=>p.side===side).length));
+  return Math.max(1,...[0,1].map(side=>roster.filter(p=>p.side===side).length));
 }
 function smallerSide() {
   return Number(roster.filter(p=>p.side===0).length>roster.length/2);
@@ -237,44 +262,67 @@ function menu(current) {
     if (!roster.some(p=>p.id===host)) host=roster[0]?.id ?? null;
     overlay();
   }
+  for(const seat of roster) {
+    if(current.has(seat.id)) seat.offlineAt=null;
+    else seat.offlineAt ??= performance.now();
+  }
+  const hostSeat=roster.find(p=>p.id===host);
+  if(hostSeat) {
+    if(current.has(host)) hostSeat.offlineAt=null;
+    else {
+      hostSeat.offlineAt ??= performance.now();
+      if(performance.now()-hostSeat.offlineAt>3000) {
+        const replacement=roster.find(p=>current.has(p.id));
+        if(replacement) {host=replacement.id;overlay();}
+      }
+    }
+  }
   let start=false;
   for (const [id,control] of current) {
     const was=previous.get(id) ?? empty;
     const known=roster.some(p=>p.id===id);
-    if (!known && control.join && !was.join) {
+    if (!known && control.join && !was.join && roster.length<8) {
       if (!previous.has(id) && id!=='keyboard' && control.b[0] && performance.now()<400 && document.referrer) continue;
       if (!roster.length) sequence=0;
       const index=id==='keyboard' ? null : Number(id.slice(4));
-      roster.push({id,index,phone:Boolean(window.couchJoinstick?.label(index)),number:++sequence,side:smallerSide()});
+      roster.push({id,index,phone:Boolean(window.couchJoinstick?.label(index)),number:++sequence,side:smallerSide(),ready:false,gadget:0});
       host ??= id;
       overlay();
     } else if (known) {
       if (pressed(control,1,was)) {
         unseat(id);
-      } else if (id===host && pressed(control,2,was)) {
-        seatsPerTeam=seatsPerTeam===1 ? 2 : 1;
-        overlay();
+      } else if (pressed(control,2,was)) {
+        switchTeam(roster.find(p=>p.id===id));
       } else if ((id===host || !current.has(host)) &&
           (pressed(control,0,was) || (id==='keyboard' && control.join && !was.join))) {
         host=id;
-        start=true;
+        start=roster.every(p=>p.id===host || p.ready || !p.phone || !current.has(p.id));
       }
     }
   }
-  if (start && host) startMatch();
+  if (start && host) {
+    if (!practiceSeen) {
+      practiceSeen=true;
+      startMatch(true);
+    } else beginLoadout();
+  }
 }
 
 function spawn(p) {
   p.x=lift[p.side].x+sideDir(p.side)*(38+(p.slot%3)*2);
-  p.y=244-(p.slot%2)*12;
+  p.y=lift[p.side].y-20-(p.slot%2)*12;
   p.vx=0; p.vy=0; p.ax=sideDir(p.side); p.ay=0;
-  p.hp=health(p); p.fuel=1; p.digAt=0; p.shotAt=0; p.shield=time+1.6; p.backAt=0; p.picker=null; p.diggingUntil=0;
+  p.hp=health(p); p.fuel=1; p.digAt=0; p.shotAt=0; p.shield=time+1.6; p.backAt=0; p.picker=null; p.diggingUntil=0;p.navigation=null;p.noPickupUntil=0;
 }
 function health(p) {return 100+25*p.level[1];}
-function startMatch() {
-  round++; time=0; breachAt=null; previousScan=0;
+function startMatch(practice=false) {
+  round+=practice ? 0 : 1; time=0; breachAt=null; previousScan=0;
+  mapIndex=(mapIndex+1)%maps.length;
+  lift.forEach((base,side)=>base.y=maps[mapIndex].bases[side]);
+  crystals=lift.map((base,side)=>({...base,side,state:'home',carrier:null,returnAt:0}));
+  bombs=[]; overtime=false;
   shots=[]; units=[]; particles=[]; relay=null;
-  caches=[{x:275,y:145},{x:423,y:386},{x:W-275,y:145},{x:W-423,y:386}];
+  caches=[{x:265,y:routeY(265)-95},{x:420,y:routeY(420)+80},{x:W-265,y:routeY(W-265)+95},{x:W-420,y:routeY(W-420)-80}];
   const count=[0,0];
   const playing=roster.slice();
   const size=teamSize();
@@ -282,23 +330,40 @@ function startMatch() {
     const humans=roster.filter(p=>p.side===side).length;
     for (let slot=humans;slot<size;slot++) playing.push({id:'cpu:'+side+':'+slot,side,number:0});
   }
-  players=playing.map(p=>({...p,slot:count[p.side]++,r:10,level:[0,0,0,0],minion:0,upgrade:0}));
-  teams=count.map(n=>({ore:24*n,capture:0,limit:Math.max(8,n*4)}));
+  players=playing.map(p=>({...p,slot:count[p.side]++,r:10,level:[0,0,0,0],
+    minion:0,upgrade:0,ore:24,mined:0,practiceMoved:0,practiceDug:false,practiceFired:false,practicePicked:false,returns:0,gadget:p.gadget ?? 0,
+    gadgetAt:0,holdCrew:false,seenRequests:new Set(),receipt:null,missingSince:null,navigation:null}));
+  teams=count.map(()=>({}));
   makeTerrain();
-  players.forEach(spawn);
+  players.forEach(p=>{
+    spawn(p);
+    units.push({type:0,side:p.side,owner:p.id,x:p.x,y:p.y,dx:sideDir(p.side),dy:0,r:8,hp:58,shotAt:0,digAt:0,stalled:0});
+  });
   for (let side=0;side<2;side++) {
     const {hp}=minionTypes[2], dir=sideDir(side);
-    units.push({type:2,guard:'lift',side,x:lift[side].x+dir*25,y:247,r:9,hp,shotAt:0});
-    units.push({type:2,guard:'outpost',side,x:lift[side].x+dir*75,y:266,r:8,hp:76,shotAt:0});
+    units.push({type:2,guard:'lift',side,x:lift[side].x+dir*25,y:lift[side].y-17,r:9,hp:Math.round(hp*Math.sqrt(size)),maxHp:Math.round(hp*Math.sqrt(size)),shotAt:0});
+    units.push({type:2,guard:'outpost',side,x:lift[side].x+dir*75,y:lift[side].y+2,r:8,hp:Math.round(76*Math.sqrt(size)),maxHp:Math.round(76*Math.sqrt(size)),shotAt:0});
   }
-  mode='play';
-  announce('MINE ORE · UPGRADE YOUR DRILL',5);
+  mode=practice ? 'practice' : 'play';
+  phaseTime=practice ? 20 : 0;
+  if (practice) {
+    units=units.filter(u=>!u.guard);
+    crystals.forEach((c,side)=>{c.x=lift[1-side].x+sideDir(1-side)*245;c.y=lift[1-side].y-5;});
+    terrain.fill(0);
+    for(let y=0;y<NY;y++) for(let x=0;x<NX;x++) {
+      if (x<2 || x>=NX-2 || y<2 || y>=NY-2 || y===Math.floor((lift[0].y+20)/STEP)) terrain[y*NX+x]=Infinity;
+      else if (Math.abs(x*STEP-260)<35 && Math.abs(y*STEP-lift[0].y)<35) terrain[y*NX+x]=4;
+      paintCell(x,y);
+    }
+    dirty=tunnelChanged=true;
+  }
+  announce(practice ? 'PRACTICE · MOVE, DRILL, FIRE, PICK UP' : 'STEAL THEIR CRYSTAL · BRING IT HOME',5);
   overlay();
 }
 function announce(text,duration) {message=text; messageUntil=time+duration;}
 function note(p,text) {p.note=text; p.noteUntil=time+2;}
 function burst(x,y,color,count) {
-  for (let i=0;i<count;i++) {
+  for (let i=0;i<Math.min(count,reducedMotion ? 4 : 32);i++) {
     const angle=Math.random()*Math.PI*2, speed=25+Math.random()*91;
     particles.push({x,y,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,
       life:.24+Math.random()*.26,color});
@@ -345,10 +410,11 @@ function axis(p,amount,key,canStep=false) {
 }
 
 function move(p,control,dt) {
+  if(mode==='practice' && Math.abs(control.x)>.2) p.practiceMoved+=dt;
   const grounded=!fits(p.x,p.y+2,p.r);
   const thrust=(control.autoJet || control.b[4]) && p.fuel>.005;
   const level=p.level[2];
-  const target=Math.abs(control.x)>.13 ? control.x*(151+level*9) : 0;
+  const target=Math.abs(control.x)>.13 ? control.x*(151+level*9)*(carrying(p) ? .85 : 1) : 0;
   p.vx+=(target-p.vx)*Math.min(1,dt*(grounded ? 16 : 9));
   p.vy=clamp(p.vy+(thrust ? -620-level*42 : 460)*dt,-167-level*12,250);
   if (thrust) {
@@ -365,16 +431,19 @@ function move(p,control,dt) {
 }
 
 function dig(p) {
+  if (carrying(p)) {note(p,'CARRY HOME · NO DRILL');return;}
   p.digAt=time+.29-p.level[0]*.035;
+  if(mode==='practice') p.practiceDug=true;
   const x=p.x+p.ax*25,y=p.y+p.ay*25;
   const power=1.55+p.level[0]*.65;
-  const mouth=carve(p.x+p.ax*8,p.y+p.ay*8,20,power*.6,p.side,p.level[0]);
-  const front=carve(x,y,27+p.level[0]*2,power,p.side,p.level[0]);
+  const mouth=carve(p.x+p.ax*8,p.y+p.ay*8,20,power*.6,p.side,p.level[0],p);
+  const front=carve(x,y,27+p.level[0]*2,power,p.side,p.level[0],p);
   if ((mouth || front) && p.number) sound('dig');
   p.diggingUntil=time+.18;
 }
 
 function fire(from,dx,dy,unit=false) {
+  if(mode==='practice' && !unit) from.practiceFired=true;
   const level=unit ? 0 : from.level[3];
   from.shotAt=time+(from.guard ? .93 : unit ? .79 : .58-level*.065);
   const x=from.x+dx*9,y=from.y+dy*9;
@@ -384,12 +453,15 @@ function fire(from,dx,dy,unit=false) {
   if (!unit && from.number) sound('shot');
 }
 function hurt(target,damage,side) {
+  if (target.hp<=0 || target.shield>time) return;
   target.hp-=damage;
   target.flashUntil=time+.13;
   burst(target.x,target.y,colors[target.side],5);
   if (target.hp>0) return;
-  teams[side].ore+=target.level ? 7 : 3;
-  if (target.level) target.backAt=time+3.1;
+  const miner=players.find(p=>p.side===side && p.hp>0);
+  if (miner) miner.ore+=target.level ? 7 : 3;
+  if (target.level) dropCrystal(target);
+  if (target.level) target.backAt=time+3;
   burst(target.x,target.y,colors[target.side],11);
 }
 function updateShots(dt) {
@@ -423,29 +495,32 @@ function updateShots(dt) {
 }
 function purchase(p) {
   const selected=p.upgrade, cap=2, tier=p.level[selected];
-  if (tier===cap) {note(p,'MAX LEVEL'); return;}
+  if (tier===cap) {note(p,'MAX LEVEL'); return false;}
   const cost=upgradeCost(tier);
-  if (teams[p.side].ore<cost) {note(p,'NEED '+cost+' ORE'); return;}
-  teams[p.side].ore-=cost;
+  if (p.ore<cost) {note(p,'NEED '+cost+' ORE'); return false;}
+  p.ore-=cost;
   p.level[selected]++;
   if (selected===1) p.hp+=25;
   if (selected===2) p.fuel=1;
   note(p,upgradeTypes[selected].name+' '+p.level[selected]);
   if (p.number) sound('buy');
+  return true;
 }
 function upgradeCost(level) {return 16+level*12;}
+function ownedUnits(p) {return units.filter(u=>u.owner===p.id && u.hp>0 && !u.finished).length;}
 function unitCount(side) {return units.filter(u=>u.side===side && u.hp>0 && !u.guard).length;}
 function summon(p) {
-  const type=p.minion, spec=minionTypes[type], team=teams[p.side];
-  if (unitCount(p.side)>=team.limit) {note(p,'CREW FULL'); return;}
-  if (team.ore<spec.cost) {note(p,'NEED '+spec.cost+' ORE'); return;}
-  team.ore-=spec.cost;
+  const type=p.minion, spec=minionTypes[type];
+  if (ownedUnits(p)>=4) {note(p,'CREW FULL · 4 MAX'); return false;}
+  if (p.ore<spec.cost) {note(p,'NEED '+spec.cost+' ORE'); return false;}
+  p.ore-=spec.cost;
   const aheadX=p.x+p.ax*16,aheadY=p.y+p.ay*16;
   const ahead=fits(aheadX,aheadY,8);
   units.push({type,side:p.side,owner:p.id,x:ahead ? aheadX : p.x,y:ahead ? aheadY : p.y,
     dx:p.ax,dy:p.ay,r:8,hp:spec.hp,shotAt:time,digAt:time,stalled:0});
   note(p,'+'+spec.name);
   if (p.number) sound('buy');
+  return true;
 }
 function clearShot(a,b) {
   const d=between(a,b);
@@ -475,8 +550,8 @@ function updateBorer(u,dt) {
     u.digAt=time+.47;
     const owner=players.find(p=>p.id===u.owner);
     const level=owner?.level[0] ?? 0;
-    const mouth=carve(u.x+u.dx*8,u.y+u.dy*8,17,.76,u.side,level);
-    const front=carve(u.x+u.dx*19,u.y+u.dy*19,23,1.24,u.side,level);
+    const mouth=carve(u.x+u.dx*8,u.y+u.dy*8,17,.76,u.side,level,owner);
+    const front=carve(u.x+u.dx*19,u.y+u.dy*19,23,1.24,u.side,level,owner);
     if (mouth || front) u.stalled=0;
   }
   const x=u.x,y=u.y;
@@ -525,9 +600,10 @@ function updateUnits(dt) {
       if (u.shotAt<=time) fire(u,(enemy.x-u.x)/d,(enemy.y-u.y)/d,true);
     }
     if (u.type===2) continue;
-    const target=enemy || (owner?.hp>0 ? owner : lift[u.side]);
+    const target=owner?.holdCrew ? u.holdPosition || (u.holdPosition={x:u.x,y:u.y}) : enemy || (owner?.hp>0 ? owner : lift[u.side]);
     const distance=between(u,target);
-    if (distance>34) drift(u,(target.x-u.x)*112/distance,(target.y-u.y)*112/distance,dt);
+    if (!owner?.holdCrew) u.holdPosition=null;
+    if (distance> (owner?.holdCrew ? 4 : 34)) drift(u,(target.x-u.x)*112/distance,(target.y-u.y)*112/distance,dt);
   }
   units=units.filter(u=>u.hp>0 && !u.finished);
 }
@@ -536,20 +612,36 @@ function bot(p) {
   const direction=sideDir(p.side);
   const ready=breachAt!==null;
   const goal=lift[1-p.side];
-  const prepCache=!ready && p.level[0]<2 && caches.find(cache=>
-    !cache.claimed && (cache.x<W/2) === (p.side===0) && cache.y>280);
+  const cargo=carrying(p);
+  const own=crystals[p.side];
+  const returnTarget=own.state!=='home' ? own : null;
+  const defending=p.slot%2===1 && returnTarget;
+  const target=cargo ? (returnTarget || lift[p.side]) : defending ? returnTarget : crystals[1-p.side];
+  const targetPlayer=target?.carrier && players.find(q=>q.id===target.carrier);
+  const destination=targetPlayer || target || goal;
   const home=lift[p.side];
-  const homeUnderAttack=p.slot%2===1 && players.some(q=>q.side!==p.side && q.hp>0 && Math.abs(q.x-home.x)<215);
-  const protect=ready && (homeUnderAttack || teams[1-p.side].capture>1) && Math.abs(p.x-home.x)<460;
-  const xGoal=protect ? lift[p.side].x : prepCache ? prepCache.x : goal.x;
-  const yGoal=prepCache ? prepCache.y : protect || Math.abs(p.x-goal.x)<130 ? goal.y+5 : 278+Math.sin(p.x*.012)*14;
-  const near=Math.abs(xGoal-p.x)<13;
+  const prepCache=!ready && p.level[0]<2 && caches.find(cache=>
+    !cache.claimed && (cache.x<W/2)===(p.side===0) && cache.y>routeY(cache.x));
+  let xGoal=prepCache ? prepCache.x : destination.x;
+  let yGoal=prepCache ? prepCache.y : Math.abs(p.x-destination.x)<130 ? destination.y : routeY(p.x);
+  if ((cargo || ready) && !clearShot(p,{x:xGoal,y:yGoal})) {
+    const waypoint=navigate(p,destination);
+    if (waypoint) {xGoal=waypoint.x;yGoal=waypoint.y;}
+  }
+  p.botProgress ??= {x:p.x,y:p.y,at:time};
+  if(between(p,p.botProgress)>15) p.botProgress={x:p.x,y:p.y,at:time};
+  if(cargo && time-p.botProgress.at>2) {
+    dropCrystal(p);
+    p.noPickupUntil=time+2;
+    p.botProgress.at=time;
+  }
+  const near=Math.abs(xGoal-p.x)<(cargo || ready ? 3 : 10);
   let dx=near ? 0 : Math.sign(xGoal-p.x),dy=clamp((yGoal-p.y)/22,-1,1);
   const enemy=breachAt!==null && closestEnemy(p,155+p.level[3]*15);
   const shotX=enemy ? enemy.x-p.x : near && Math.abs(dy)>.3 ? 0 : dx || direction;
   const shotY=enemy ? enemy.y-p.y : dy;
   const length=Math.max(1,norm(shotX,shotY));
-  const available=teams[p.side].ore;
+  const available=p.ore;
   let buy=-1, unit=-1;
   const crew=units.filter(u=>u.side===p.side && u.owner===p.id);
   if (crew.length===0 && available>=12 && !ready && p.level[0]>0) unit=0;
@@ -558,7 +650,9 @@ function bot(p) {
   else if (p.level[1]<2 && available>=upgradeCost(p.level[1])) buy=1;
   else if (p.level[3]<2 && available>=upgradeCost(p.level[3])) buy=3;
   else if (p.level[2]<2 && available>=upgradeCost(p.level[2])) buy=2;
-  return {x:dx,y:dy,ax:shotX/length,ay:shotY/length,b:[!enemy,Boolean(enemy),false,false,p.y>yGoal+4],buy,unit};
+  if (enemy && p.gadgetAt<=time) useGadget(p);
+  if (p.phone || cargo) buy=unit=-1;
+  return {x:dx,y:dy,ax:shotX/length,ay:shotY/length,b:[!enemy && !cargo,Boolean(enemy),false,false,p.y>yGoal+4],buy,unit};
 }
 const PICK_HOLD = .23;
 const minionArrows = ['←','↑','→'];
@@ -594,6 +688,9 @@ function updatePlayer(p,control,was,dt) {
     if (p.backAt<=time) spawn(p);
     return;
   }
+  if (mode==='practice' && pressed(control,3,was)) {beginLoadout();return;}
+  if (mode==='loadout') return;
+  if (pressed(control,6,was)) useGadget(p);
   if (updatePicker(p,control,was)) {
     move(p,empty,dt);
     return;
@@ -601,7 +698,7 @@ function updatePlayer(p,control,was,dt) {
   const magnitude=norm(control.x,control.y);
   if (control.ax!==undefined) {
     p.ax=control.ax; p.ay=control.ay;
-  } else if (magnitude>.26) {
+  } else if (!control.independent && magnitude>.26) {
     p.ax=control.x/magnitude; p.ay=control.y/magnitude;
   }
   if (control.unit>=0) {
@@ -612,10 +709,10 @@ function updatePlayer(p,control,was,dt) {
     p.upgrade=control.buy;
     purchase(p);
   } else if (pressed(control,3,was)) purchase(p);
-  if (control.b[1] && p.shotAt<=time && !(p.diggingUntil>time)) {
+  if (control.b[1] && !control.b[0] && p.shotAt<=time && !(p.diggingUntil>time)) {
     fire(p,p.ax,p.ay);
     p.digAt=Math.max(p.digAt,time+.18);
-  } else if (control.b[0] && p.digAt<=time && !control.b[1]) dig(p);
+  } else if (control.b[0] && p.digAt<=time) dig(p);
   move(p,control,dt);
 }
 
@@ -653,7 +750,7 @@ function updateSupply(dt) {
     const finder=players.find(p=>p.hp>0 && between(cache,p)<24 && clearShot(p,cache));
     if (!finder) continue;
     cache.claimed=true;
-    teams[finder.side].ore+=24;
+    finder.ore+=24;
     note(finder,'+24 ORE CACHE');
     burst(cache.x,cache.y,'#ffcd78',16);
     if (finder.number) sound('buy');
@@ -662,26 +759,61 @@ function updateSupply(dt) {
   const nearby=players.filter(p=>p.hp>0 && between(p,relay)<52 && clearShot(p,relay));
   const mint=nearby.some(p=>p.side===0), ember=nearby.some(p=>p.side===1);
   relay.owner=mint===ember ? null : Number(ember);
-  if (relay.owner!==null) teams[relay.owner].ore+=dt*1.35;
+  if (relay.owner!==null) {
+    const occupants=nearby.filter(p=>p.side===relay.owner);
+    for (const p of occupants) p.ore+=dt*.65/occupants.length;
+  }
 }
 
-function updateCapture(dt) {
-  if (breachAt===null) return;
-  for (let side=0;side<2;side++) {
-    const target=lift[1-side], team=teams[side];
-    const inside=players.filter(p=>p.hp>0 && between(p,target)<40 && clearShot(p,target));
-    const attacking=inside.some(p=>p.side===side);
-    const contested=inside.some(p=>p.side!==side && time>=p.shield) ||
-      units.some(u=>u.guard==='lift' && u.hp>0 && u.side!==side);
-    if (attacking && !contested) team.capture+=dt;
-    else if (!attacking) team.capture=Math.max(0,team.capture-dt*.45);
-    if (team.capture>=CAPTURE) {
-      result=side;
-      mode='result';
-      overlay();
-      sound('win');
-      return;
+function carrying(p) {return crystals.find(c=>c.carrier===p.id);}
+function dropCrystal(p) {
+  const crystal=carrying(p);
+  if (!crystal) return;
+  Object.assign(crystal,{x:p.x,y:p.y,state:'dropped',carrier:null,returnAt:time+12});
+  announce(names[p.side]+' DROPPED THE CRYSTAL',2);
+}
+function returnCrystal(c,defender=null) {
+  Object.assign(c,{...lift[c.side],state:'home',carrier:null,returnAt:0});
+  if (defender) {defender.returns++;defender.ore+=5;}
+  announce(names[c.side]+' CRYSTAL RETURNED',2);
+}
+function finish(side) {
+  if (mode!=='play') return;
+  result=side;
+  if (side!==null) wins[side]++;
+  mode='result';
+  overlay();
+  sound('win');
+}
+function updateCrystals() {
+  for (const c of crystals) {
+    const carrier=c.carrier && players.find(p=>p.id===c.carrier);
+    if (carrier) {
+      if (carrier.hp<=0) {dropCrystal(carrier);continue;}
+      c.x=carrier.x;c.y=carrier.y;
     }
+    if (c.state==='dropped') {
+      const defender=players.find(p=>p.side===c.side && p.hp>0 && between(p,c)<23 && clearShot(p,c));
+      if (defender || time>=c.returnAt) {returnCrystal(c,defender);continue;}
+    }
+    if (c.state==='carried') continue;
+    if (c.state==='home' && units.some(u=>u.guard==='lift' && u.side===c.side && u.hp>0)) continue;
+    const thief=players.find(p=>p.side!==c.side && p.hp>0 && !(p.noPickupUntil>time) && !carrying(p) && between(p,c)<24 && clearShot(p,c));
+    if (thief) {
+      Object.assign(c,{carrier:thief.id,state:'carried'});
+      if(mode==='practice') thief.practicePicked=true;
+      announce(names[thief.side]+' HAS THE CRYSTAL · BRING IT HOME',3);
+      sound('alarm');
+    }
+  }
+  // Evaluate delivery after both crystals update, making simultaneous steals fair.
+  for (const p of players) {
+    if (p.hp<=0 || !carrying(p) || between(p,lift[p.side])>=30 || !clearShot(p,lift[p.side])) continue;
+    if (crystals[p.side].state==='home') {
+      if(mode==='practice') {returnCrystal(carrying(p));note(p,'DELIVERED · YOU KNOW THE GOAL');}
+      else {finish(p.side);return;}
+    }
+    note(p,'RETURN YOUR CRYSTAL FIRST');
   }
 }
 function step(current,dt,prior=previous) {
@@ -709,16 +841,35 @@ function step(current,dt,prior=previous) {
       sound('alarm');
     }
   }
-  for (const team of teams) team.ore+=dt*.22;
+  for (const p of players) p.ore+=dt*.18;
   for (const p of players) {
     const control=p.phoneLeft ? undefined : current.get(p.id);
-    if (!control && p.phone) p.picker=null;
-    updatePlayer(p,control ?? (p.phone ? empty : bot(p)),prior.get(p.id) ?? empty,dt);
+    if (control) p.missingSince=null;
+    else if (p.phone) {
+      p.missingSince ??= time;
+      p.picker=null;
+    }
+    const fallback=p.phone && time-p.missingSince<3 ? empty : bot(p);
+    updatePlayer(p,control ?? fallback,prior.get(p.id) ?? empty,dt);
   }
   updateUnits(dt);
   updateShots(dt);
   updateSupply(dt);
-  updateCapture(dt);
+  updateBombs(dt);
+  if (mode==='practice') updateCrystals();
+  if (mode==='play') {
+    updateCrystals();
+    if (!overtime && time>=180) {
+      overtime=true;
+      for(let i=0;i<terrain.length;i++) if (rock[i]===BEDROCK && terrain[i]!==Infinity) {
+        terrain[i]=Math.min(terrain[i],2);
+        paintCell(i%NX,Math.floor(i/NX));
+      }
+      dirty=tunnelChanged=true;
+      announce('OVERTIME · 30 SECONDS · BEDROCK CRACKED',5);
+    }
+    if (time>=210) finish(null);
+  }
   for (const particle of particles) {
     particle.x+=particle.vx*dt; particle.y+=particle.vy*dt;
     particle.vy+=280*dt; particle.life-=dt;
@@ -754,6 +905,10 @@ function scene(now) {
   }
   ctx.imageSmoothingEnabled=false;
   ctx.drawImage(ground,0,TOP,W,H);
+  if(breachAt===null && mode==='play') {
+    label('BEDROCK',W/2,TOP+25,14,'#bfa6f7','center');
+    label('DRILL UPGRADES CUT FASTER',W/2,TOP+44,10,'#c1abd4','center');
+  }
   for (const cache of caches) {
     if (cache.claimed) continue;
     const y=TOP+cache.y;
@@ -782,12 +937,21 @@ function scene(now) {
     rect(p.x+7,y-12,5,25,color+'af');
     const guarded=units.some(u=>u.guard==='lift' && u.side===side);
     label(active && !guarded ? '⇅' : '×',p.x,y,18,color,'center');
-    const capture=teams?.[1-side].capture ?? 0;
-    if (capture>0) {
-      ctx.beginPath(); ctx.arc(p.x,y,40,-Math.PI/2,-Math.PI/2+Math.PI*2*capture/CAPTURE);
-      ctx.strokeStyle=colors[1-side]; ctx.lineWidth=5; ctx.stroke();
+    label(names[side]+' HOME',p.x,y-49,11,color,'center');
+  }
+  for (const crystal of crystals) {
+    const color=colors[crystal.side], y=TOP+crystal.y-(crystal.carrier ? 34 : 0);
+    circle(crystal.x,y,18,color+'24');
+    label('◆',crystal.x,y,27,color,'center');
+    if (crystal.state==='dropped') label(timer(crystal.returnAt-time),crystal.x,y-23,12,color,'center');
+    if (crystal.carrier) {
+      const carrier=players.find(p=>p.id===crystal.carrier);
+      line(crystal.x,y-18,lift[carrier.side].x,TOP+lift[carrier.side].y,colors[carrier.side]+'55',2);
     }
-    label(names[side]+' LIFT',p.x,y-49,11,color,'center');
+  }
+  for (const bomb of bombs) {
+    circle(bomb.x,TOP+bomb.y,8,'#ffb679');
+    circle(bomb.x,TOP+bomb.y,11+(Math.sin(now*16)+1)*2,'#ffb679',true);
   }
   for (const u of units) {
     const y=TOP+u.y,color=u.flashUntil>time ? '#fff2ce' : colors[u.side];
@@ -808,7 +972,7 @@ function scene(now) {
       rect(u.x-3,y-10,6,9,color);
     }
     if (u.guard) label(u.guard==='lift' ? 'LIFT GUARD' : 'OUTPOST',u.x,y-16,10,color,'center');
-    rect(u.x-8,y+10,16*Math.min(1,u.hp/(u.guard==='outpost' ? 76 : minionTypes[u.type].hp)),2,color+'ac');
+    rect(u.x-8,y+10,16*Math.min(1,u.hp/(u.maxHp || minionTypes[u.type].hp)),2,color+'ac');
   }
   for (const p of players) {
     const color=colors[p.side], profile=window.couchJoinstick?.profile?.(p.index);
@@ -830,6 +994,16 @@ function scene(now) {
     rect(x-12,y+16,24,3,'#271d29');
     rect(x-12,y+16,24*clamp(p.hp/health(p),0,1),3,color);
     if (p.fuel<.99) rect(x-12,y+20,24*p.fuel,2,'#ffc46e');
+    if (p.diggingUntil>time && !carrying(p)) {
+      const tx=clamp(Math.floor((p.x+p.ax*25)/STEP),0,NX-1),ty=clamp(Math.floor((p.y+p.ay*25)/STEP),0,NY-1);
+      const i=ty*NX+tx;
+      if(terrain[i]>0 && terrain[i]!==Infinity) {
+        const max=rock[i]===BEDROCK ? 550*(1+Math.min(3,teamSize()-1)*.66) : rock[i]===FORTIFICATION ? 250 : 12;
+        const fraction=clamp(1-terrain[i]/max,.02,1);
+        rect(x-19,y+26,38,3,'#32293e');
+        rect(x-19,y+26,38*fraction,3,rock[i]===BEDROCK?'#bba1ff':'#ffd28b');
+      }
+    }
     if (p.noteUntil>time) label(p.note,x,y-37,12,'#fff1d6','center');
   }
   for (const shot of shots) {
@@ -841,7 +1015,7 @@ function scene(now) {
     rect(particle.x,TOP+particle.y,3,3,particle.color);
   }
   ctx.globalAlpha=1;
-  if (mode==='play' && messageUntil>time) {
+  if ((mode==='play' || mode==='practice') && messageUntil>time) {
     const alpha=Math.min(1,(messageUntil-time)*2);
     ctx.globalAlpha=alpha*(.93+Math.sin(now*5)*.07);
     rect(W/2-257,TOP+12,514,34,'#161321ed');
@@ -857,19 +1031,18 @@ function dashboard() {
   for (let side=0;side<2;side++) {
     const x=side ? W-24 : 24, align=side ? 'right' : 'left', color=colors[side], team=teams?.[side];
     label(names[side],x,22,23,color,align,950);
-    label(team ? '◆ '+Math.floor(team.ore)+' ORE    ·    '+unitCount(side)+'/'+team.limit+' MINIONS' : 'MINING COMPANY',
+    label(team ? 'CRYSTAL '+(crystals[side]?.state || 'home').toUpperCase()+'  ·  '+wins[side]+' WINS' : 'MINING COMPANY',
       x,49,15,'#e9d2d5',align,750);
-    if (team?.capture>0) {
-      label('LIFT CAPTURE '+Math.floor(team.capture/CAPTURE*100)+'%',x,70,12,color,align,900);
-    }
   }
-  const phase=breachAt===null ? 'EXCAVATION' : 'LIFT ASSAULT';
-  const objective=breachAt===null ? 'UPGRADE DRILL · CUT THROUGH BEDROCK' : 'DESTROY THE GUARD · HOLD THE RIVAL LIFT';
+  const phase=mode==='practice' ? 'PRACTICE · '+Math.ceil(phaseTime)+'s' : overtime ? 'OVERTIME' : breachAt===null ? 'MINE & BUILD' : 'STEAL & ESCAPE';
+  const objective=mode==='practice' ? phaseTime>14 ? 'LEFT THUMB MOVES · UP JETS'
+      : phaseTime>8 ? 'DRAG RIGHT TO FIRE · HOLD DIG TO TUNNEL' : 'TOUCH THEIR CRYSTAL · CARRY IT HOME'
+    : 'STEAL THEIR CRYSTAL → BRING IT HOME';
   label(phase,W/2,22,20,breachAt===null ? '#73efda' : '#ffc580','center',900);
   label(objective,W/2,49,14,'#ead7e0','center');
-  if (mode==='play') label(timer(time),W/2,69,13,'#f4bd88','center');
+  if (mode==='play') label(maps[mapIndex].name+' · '+timer((overtime ? 210 : 180)-time),W/2,69,13,'#f4bd88','center');
   if (!players.length) {
-    label('MINE   /   BUILD   /   CAPTURE',W/2,659,14,'#cdb8cf','center');
+    label('MINE A ROUTE   /   STEAL THEIR CRYSTAL   /   CARRY IT HOME',W/2,659,14,'#cdb8cf','center');
     return;
   }
   const humans=players.filter(p=>p.number);
@@ -894,8 +1067,8 @@ function dashboard() {
           j===p[field] ? color : '#d5bfd6');
       });
     } else {
-      label('X  '+minion.name+' '+minion.cost,x+29,y+5,12,'#f2e2ed');
-      label('Y  '+upgrade.name+' '+(tier===2 ? 'MAX' : 'L'+(tier+1)+' / '+upgradeCost(tier)),
+      label(Math.floor(p.ore)+' ORE · '+ownedUnits(p)+'/4 CREW',x+64,y+5,12,'#f2e2ed');
+      label(carrying(p) ? (p.side ? 'CARRY HOME →' : '← CARRY HOME') : gadgets[p.gadget].name+' · '+(p.gadgetAt>time ? Math.ceil(p.gadgetAt-time)+'s' : 'READY'),
         x+29,y+21,12,'#d5bfd6');
     }
   });
@@ -905,61 +1078,218 @@ function frame(now) {
   const dt=clamp((now-last)/1000,0,.1);
   last=now;
   const current=input();
-  if (mode==='play') {
+  if (mode==='play' || mode==='practice') {
     accumulator+=dt;
     let prior=previous;
-    while (accumulator>=1/60 && mode==='play') {
+    while (accumulator>=1/60 && (mode==='play' || mode==='practice')) {
       step(current,1/60,prior);
+      if (mode==='practice') {
+        phaseTime-=1/60;
+        if (phaseTime<=0) beginLoadout();
+      }
       prior=current;
       accumulator-=1/60;
     }
     previous=prior;
   } else {
     accumulator=0;
-    menu(current);
+    if (mode==='loadout') {
+      phaseTime-=dt;
+      if (phaseTime<=0) startMatch();
+      else overlay();
+    } else menu(current);
     previous=current;
   }
   scene(now/1000);
   dashboard();
   requestAnimationFrame(frame);
 }
+function routeY(x) {
+  const t=clamp((x-143)/(W-286),0,1);
+  if (mapIndex===1) return 196+144*t+Math.sin(t*Math.PI*2)*38;
+  return mapIndex===2 ? 264+Math.sin(t*Math.PI*2)*80 : 278;
+}
+function switchTeam(seat) {
+  if (!seat) return;
+  if (roster.length>1 && roster.filter(p=>p.side===seat.side).length===1) return;
+  seat.side=1-seat.side;seat.ready=false;
+  overlay();
+}
+function beginLoadout() {
+  if(mode==='practice') mapIndex=-1;
+  mode='loadout';phaseTime=8;
+  roster.forEach(p=>p.ready=false);
+  overlay();
+}
+function resultSummary() {
+  const top=players.reduce((best,p)=>p.mined>(best?.mined ?? -1) ? p : best,null);
+  const name=p=>(window.couchJoinstick?.profile?.(p.index)?.name || (p.number ? 'P'+p.number : 'CPU')).replace(/[&<>"']/g,'');
+  const returns=players.reduce((best,p)=>p.returns>(best?.returns ?? 0) ? p : best,null);
+  return 'Round '+round+' · '+timer(time)+' · '+wins[0]+'–'+wins[1]+' team wins<br>'+
+    (returns ? name(returns)+' returned '+returns.returns+' crystal'+(returns.returns===1 ? '' : 's')
+      : top ? name(top)+' mined '+Math.round(top.mined*16/1000)+'k rock' : 'Choose a gadget for the next mine.');
+}
+function navigate(p,destination) {
+  const spacing=12,width=Math.floor(W/spacing),height=Math.floor(H/spacing);
+  const indexOf=(x,y)=>clamp(Math.floor(y/spacing),0,height-1)*width+clamp(Math.floor(x/spacing),0,width-1);
+  const target=indexOf(destination.x,destination.y);
+  if (p.navigation && p.navigation.until>time && p.navigation.target===target) {
+    const path=p.navigation.path;
+    while(path.length>1 && between(p,path[0])<9) path.shift();
+    return path[0];
+  }
+  let start=indexOf(p.x,p.y);
+  let closest=Infinity;
+  for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++) {
+    const x=Math.floor(p.x/spacing)+dx,y=Math.floor(p.y/spacing)+dy;
+    const point={x:x*spacing+6,y:y*spacing+6};
+    const d=between(p,point);
+    if(x<1 || x>=width-1 || y<1 || y>=height-1 || d>=closest || !fits(point.x,point.y,10) || !clearShot(p,point)) continue;
+    start=y*width+x;closest=d;
+  }
+  const visited=new Uint8Array(width*height),parent=new Int32Array(width*height).fill(-1);
+  const queue=[start];visited[start]=1;
+  let end=start,best=Infinity;
+  for(let head=0;head<queue.length;head++) {
+    const index=queue[head],x=index%width,y=Math.floor(index/width);
+    const point={x:x*spacing+6,y:y*spacing+6};
+    const distance=between(point,destination);
+    if(distance<best){best=distance;end=index;}
+    if(distance<22) break;
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]]) {
+      const nx=x+dx,ny=y+dy,next=ny*width+nx;
+      if(nx<1 || nx>=width-1 || ny<1 || ny>=height-1 || visited[next]) continue;
+      visited[next]=1;
+      const to={x:nx*spacing+6,y:ny*spacing+6};
+      if(!fits(to.x,to.y,10) || !clearShot(point,to)) continue;
+      parent[next]=index;queue.push(next);
+    }
+  }
+  const path=[];
+  while(end!==start && end>=0) {
+    path.unshift({x:(end%width)*spacing+6,y:Math.floor(end/width)*spacing+6});
+    end=parent[end];
+  }
+  p.navigation={until:time+.7,target,path};
+  return path[Math.min(1,path.length-1)];
+}
+function useGadget(p) {
+  if (p.hp<=0 || p.gadgetAt>time) return false;
+  const spec=gadgets[p.gadget];
+  p.gadgetAt=time+spec.cooldown;
+  if (p.gadget===0) {
+    for(let i=0;i<32;i++) {
+      const x=p.x+p.ax*4,y=p.y+p.ay*4;
+      if(!fits(x,y,p.r)) break;
+      p.x=x;p.y=y;
+      if(!reducedMotion && i%3===0) burst(x,y,colors[p.side],1);
+    }
+    p.vy=Math.min(p.vy,0);
+  } else if(p.gadget===1) {
+    bombs.push({x:p.x,y:p.y,dx:p.ax,dy:p.ay,side:p.side,owner:p.id,explodeAt:time+1,stuck:false});
+  } else p.shield=time+2;
+  note(p,spec.name);
+  sound('buy');
+  return true;
+}
+function updateBombs(dt) {
+  for(const bomb of bombs) {
+    if(!bomb.stuck) {
+      for(let i=0;i<4;i++) {
+        const x=bomb.x+bomb.dx*240*dt/4,y=bomb.y+bomb.dy*240*dt/4;
+        if(solid(x,y)){bomb.stuck=true;break;}
+        bomb.x=x;bomb.y=y;
+      }
+    }
+    if(time<bomb.explodeAt) continue;
+    // One explosion hits each cell once. Bedrock takes less than one drill pulse.
+    const left=clamp(Math.floor((bomb.x-57)/STEP),1,NX-2),right=clamp(Math.ceil((bomb.x+57)/STEP),1,NX-2);
+    const top=clamp(Math.floor((bomb.y-57)/STEP),1,NY-2),bottom=clamp(Math.ceil((bomb.y+57)/STEP),1,NY-2);
+    for(let y=top;y<=bottom;y++) for(let x=left;x<=right;x++) {
+      const index=y*NX+x;
+      if(Math.hypot(x*STEP-bomb.x,y*STEP-bomb.y)>55 || !terrain[index] || terrain[index]===Infinity) continue;
+      terrain[index]=Math.max(0,terrain[index]-(rock[index]===BEDROCK ? .5 : 35));
+      if(!terrain[index]) {ore[index]=0;tunnelChanged=true;}
+      paintCell(x,y);dirty=true;
+    }
+    if(breachAt!==null) for(const target of players.concat(units)) {
+      if(target.side!==bomb.side && between(target,bomb)<58) hurt(target,48,bomb.side);
+    }
+    burst(bomb.x,bomb.y,'#ffbd81',reducedMotion ? 5 : 22);
+    sound('shot');
+    bomb.done=true;
+  }
+  bombs=bombs.filter(b=>!b.done);
+}
+function phoneCommand(index,data) {
+  const id='pad:'+index;
+  const seat=roster.find(p=>p.id===id);
+  const p=players.find(p=>p.id===id && p.phone && !p.phoneLeft);
+  if(data.leave===true) {
+    unseat(id);
+    if(p) {dropCrystal(p);p.phoneLeft=true;}
+    return;
+  }
+  if(!seat) return;
+  if(data.command==='ready' && (mode==='lobby' || mode==='result')) {
+    seat.ready=!seat.ready;overlay();return;
+  }
+  if(data.command==='team' && (mode==='lobby' || mode==='result')) {switchTeam(seat);return;}
+  if(data.command==='gadgetChoice' && mode==='loadout' && Number.isInteger(data.choice) && gadgets[data.choice]) {
+    seat.gadget=data.choice;return;
+  }
+  if(seat.id===host && data.command==='practice' && (mode==='lobby' || mode==='result')) {
+    practiceSeen=true;startMatch(true);return;
+  }
+  if(seat.id===host && data.command==='skip' && mode==='practice') {beginLoadout();return;}
+  if(data.command==='settings') {
+    if(seat.id!==host) return;
+    if(typeof data.muted==='boolean') muted=data.muted;
+    if(typeof data.reducedMotion==='boolean') reducedMotion=data.reducedMotion;
+    return;
+  }
+  if(!p || (mode!=='play' && mode!=='practice')) return;
+  if(data.command==='crew') {p.holdCrew=!p.holdCrew;note(p,p.holdCrew ? 'HUNTERS HOLD' : 'HUNTERS FOLLOW');return;}
+  if(data.command==='gadget') {useGadget(p);return;}
+  if(data.kind!=='minion' && data.kind!=='upgrade') return;
+  const options=data.kind==='minion' ? minionTypes : upgradeTypes;
+  if(!Number.isInteger(data.choice) || !options[data.choice]) return;
+  // Selection from a previous phone build remains compatible.
+  if(data.buy!==true) {p[data.kind]=data.choice;return;}
+  if(typeof data.request!=='string' || data.request.length>100 || p.seenRequests.has(data.request)) return;
+  p.seenRequests.add(data.request);
+  if(p.seenRequests.size>200) p.seenRequests.delete(p.seenRequests.values().next().value);
+  p[data.kind]=data.choice;
+  const success=p.hp>0 && (data.kind==='minion' ? summon(p) : purchase(p));
+  if(p.hp<=0) note(p,'RESPAWNING · BUY WHEN READY');
+  p.receipt={id:data.request,ok:Boolean(success),text:p.note};
+}
 function describePhones() {
-  const descriptions={_default:{phase:mode}};
+  const descriptions={_default:{version:2,phase:mode}};
   for (const seat of roster) {
-    if (!seat.phone) continue;
-    const player=mode==='play' ? players.find(p=>p.id===seat.id) : null;
-    const info={player:window.couchJoinstick?.profile?.(seat.index)?.name || 'P'+seat.number,team:names[seat.side],phase:mode,host:seat.id===host};
-    if (player) {
-      info.minion=player.minion;
-      info.upgrade=player.upgrade;
-      info.minions=minionTypes.map(({name,cost})=>({name,cost}));
-      info.upgrades=upgradeTypes.map(({name},i)=>{
-        const level=player.level[i];
-        return {name,cost:level===2 ? 'Max' : upgradeCost(level)};
-      });
-    } else info.size=teamSize();
+    if(!seat.phone) continue;
+    const p=(mode==='play' || mode==='practice') && players.find(p=>p.id===seat.id);
+    const info={version:2,player:window.couchJoinstick?.profile?.(seat.index)?.name || 'P'+seat.number,
+      team:names[seat.side],color:colors[seat.side],phase:mode,host:seat.id===host,
+      ready:seat.ready,allReady:roster.every(s=>s.id===host || s.ready || s.offlineAt!=null),size:teamSize(),
+      gadgets,gadget:seat.gadget ?? 0,remaining:Math.ceil(phaseTime),muted,reducedMotion,
+      map:maps[(mode==='loadout' ? mapIndex+1 : Math.max(0,mapIndex))%maps.length].name};
+    if(p) {
+      Object.assign(info,{minion:p.minion,upgrade:p.upgrade,hp:Math.max(0,Math.ceil(p.hp)),maxHp:health(p),
+        fuel:Math.round(p.fuel*10),ore:Math.floor(p.ore),crew:ownedUnits(p),holdCrew:p.holdCrew,
+        cooldown:Math.max(0,Math.ceil(p.gadgetAt-time)),carrying:Boolean(carrying(p)),
+        objective:carrying(p) ? crystals[p.side].state==='home' ? 'BRING IT HOME' : 'RETURN YOUR CRYSTAL FIRST'
+          : crystals[p.side].state!=='home' ? 'YOUR CRYSTAL IS STOLEN' : 'STEAL THEIR CRYSTAL',
+        practice:mode==='practice' ? [p.practiceMoved>.3,p.practiceDug,p.practiceFired,p.practicePicked] : null,
+        respawn:p.hp<=0 ? Math.max(0,Math.ceil(p.backAt-time)) : 0,receipt:p.receipt,
+        minions:minionTypes.map(({name,cost,blurb})=>({name,cost,detail:blurb})),
+        upgrades:upgradeTypes.map(({name,blurb},i)=>({name,detail:blurb,level:p.level[i],cost:p.level[i]===2 ? 'Max' : upgradeCost(p.level[i])}))});
+    }
     descriptions[seat.index]=info;
   }
   return descriptions;
 }
-
 window.couchJoinstick?.describe(describePhones);
-window.couchJoinstick?.onBedrockMessage?.((index, data)=>{
-  const id='pad:'+index;
-  if (data.leave === true) {
-    unseat(id);
-    const player=players.find(p=>p.id===id);
-    if (player && mode==='play') player.phoneLeft=true;
-    return;
-  }
-  if (mode!=='play') return;
-  const player=players.find(p=>p.id===id && p.phone && !p.phoneLeft);
-  if (!player) return;
-  const {kind,choice}=data;
-  const options=kind==='minion' ? minionTypes : kind==='upgrade' ? upgradeTypes : null;
-  if (!options || !Number.isInteger(choice) || choice<0 || choice>=options.length) return;
-  player[kind]=choice;
-  note(player,options[choice].blurb);
-});
+window.couchJoinstick?.onBedrockMessage?.(phoneCommand);
 overlay();
 requestAnimationFrame(frame);

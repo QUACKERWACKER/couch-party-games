@@ -27,3 +27,11 @@ main{width:min(96vw,calc((100dvh - 117px)*1.78),1600px)}
 footer{row-gap:.45rem;column-gap:1rem}
 #hint{max-width:72cqw}
 @media(max-width:650px) and (orientation:portrait){main{width:98vw}}
+
+header span {letter-spacing:.10em}
+footer {gap:.8rem 2rem}
+footer span {display:grid;gap:.2rem;font-size:.8rem}
+footer b {color:#7ce9d2;font-size:.85rem}
+#brief {max-width:72cqw;margin-inline:auto}
+.menu:has(#eyebrow:not(:empty)) {max-width:90cqw}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}

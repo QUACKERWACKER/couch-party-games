@@ -195,7 +195,11 @@
         break;
       case 'bedrock':
         if (!data.bedrock || !room.connected(slot)) break;
+        if (Array.isArray(data.bedrock.aim) && data.bedrock.aim.length===2 && data.bedrock.aim.every(Number.isFinite)) {
+          player.aim=data.bedrock.aim.map(v=>Math.max(-1,Math.min(1,v)));
+        }
         if (data.bedrock.live === false) {
+          player.aim=undefined;
           player.heartbeat = -Infinity;
           player.canceled = true;
         }
@@ -376,6 +380,7 @@ function setupLauncher(hostedPhone) {
             updateRoster();
           }
           if (game === 'ringout') listeners?.message?.({slot,data:{aim:[aimX,aimY]}});
+          if (game === 'bedrock') listeners?.message?.({slot,data:{bedrock:{aim:[aimX,aimY]}}});
         };
       };
       await peer.setRemoteDescription({type: 'offer', sdp: offer.sdp});

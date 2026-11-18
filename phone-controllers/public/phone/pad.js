@@ -19,7 +19,7 @@ const games = {
     ], hint: 'Tap Join to take a seat in the lobby.',
   },
   bedrock: {
-    title: 'Bedrock Rivals', move: 'Move / aim', actions: [
+    title: 'Bedrock Rivals', move: 'Move · up jets', aim: true, actions: [
       [5, 'Pick minion'], [7, 'Pick upgrade'], [2, 'Summon'], [3, 'Upgrade'], [0, 'Join'], [1, 'Leave'],
     ], hint: 'Tap Join to claim a player. Tap a picker to choose equipment.',
   },
@@ -84,7 +84,7 @@ let nextDirectAttempt = 0;
 let relayInterval = 1000 / 60;
 let lastAim = [0, 0];
 let blitzBook, blitzMenu, blitzChoices, blitzPreview;
-let bedrockState, bedrockPicker, heartbeatTimer;
+let bedrockState, bedrockPicker, bedrockController, heartbeatTimer;
 const heartbeats = {
   blitz: {interval: 400, message: {blitzActive: true}},
   track: {interval: 400, message: {trackPulse: true}},
@@ -112,6 +112,7 @@ function publish(force = false, motion = false) {
   const aimX = sticks.aim?.x ?? 0;
   const aimY = sticks.aim?.y ?? 0;
   let mask = 0;
+  if (gameKey==='bedrock' && bedrockController && Math.hypot(aimX,aimY)>.22 && (sticks.aim.pointer!==null || sticks.aim.keys.size) && !actions.get(0)?.held) mask |= 1<<1;
   for (const [number, action] of actions) if (action.held) mask |= 1 << number;
   const now = performance.now();
   const channel = direct?.channel;
@@ -145,7 +146,7 @@ function publish(force = false, motion = false) {
   lastRelayMotion = now;
   if (pad.status === 'connected' && sticks.aim && (lastAim[0] !== aimX || lastAim[1] !== aimY)) {
     lastAim = [aimX, aimY];
-    pad.send({aim: lastAim});
+    pad.send(gameKey==='bedrock' ? {bedrock:{aim:lastAim}} : {aim: lastAim});
   }
   const buttons = {};
   for (const [number] of actions) if (mask & (1 << number)) buttons['b' + number] = true;
@@ -174,7 +175,8 @@ function installStick(element) {
     const screenX = (event.clientX - left - width / 2) / (width * .35);
     const screenY = (event.clientY - top - height / 2) / (height * .35);
     // Undo the portrait viewport's clockwise quarter-turn before sending game axes.
-    if (setStick(stick, portrait.matches ? screenY : screenX, portrait.matches ? -screenX : screenY)) {
+    const rotated=portrait.matches && !(gameKey==='bedrock' && bedrockController);
+    if (setStick(stick, rotated ? screenY : screenX, rotated ? -screenX : screenY)) {
       publish(false, motion);
     }
   };
@@ -287,7 +289,8 @@ function installAction(number, label) {
   });
   element.addEventListener('click', event => {
     if (action.local) {
-      openBedrockPicker(action.local);
+      if(typeof action.local==='function') action.local();
+      else openBedrockPicker(action.local);
       return;
     }
     if (event.detail !== 0 || action.held || element.getAttribute('aria-disabled') === 'true') return;
@@ -298,6 +301,7 @@ function installAction(number, label) {
 
 function neutral() {
   send(cancellations[gameKey]);
+  if(gameKey==='bedrock') send({bedrock:{aim:[0,0]}});
   for (const stick of Object.values(sticks)) {
     stick.pointer = null;
     stick.keys.clear();
@@ -362,6 +366,7 @@ function openBedrockPicker(kind) {
 }
 
 function updateBedrock(info) {
+  if(bedrockController && info?.version===2) {bedrockController.update(info);return;}
   const before = bedrockState;
   bedrockState = info;
   if (before?.phase !== info?.phase || before?.player !== info?.player) {
@@ -705,6 +710,7 @@ async function connect() {
     pad.on('status', status => {
       if (status !== 'connected') direct?.close();
       roomStatus(status);
+      if(status!=='connected') bedrockController?.reset();
       if (status === 'connected') openDirectLink();
     });
     pad.on('message', data => {
@@ -889,7 +895,15 @@ if (validCode && (lobby || game)) {
     if (document.hidden) suspendControls();
     else heartbeat();
   });
-  connect();
+  if(gameKey==='bedrock') {
+    import('../Bedrock/phone-controller.js').then(({installBedrockPhone})=>{
+      bedrockController=installBedrockPhone({actions,sticks,send,neutral,installStick,setActionLabel,setStick,publish});
+      connect();
+    }).catch(error=>{
+      $('status').textContent='Controller update unavailable. Refresh to retry.';
+      console.error(error);
+    });
+  } else connect();
 } else {
   $('status').textContent = code ? 'Check the four-letter code shown on the shared screen.'
     : 'Enter the code on the shared screen, or scan its QR code with your camera.';

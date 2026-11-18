@@ -12,7 +12,7 @@ PAGES = {
     "Blitz 7/game": "game.js style.css",
     "Blitz Hoops": "game.js style.css",
     "Blitz Track": "events.js game.js style.css",
-    "Bedrock": "game.js style.css",
+    "Bedrock": "game.js style.css phone-controller.js",
     "Ringout": ("build-mode.js card-effects.js cards.js cosmetics.js floor-sprites.svg "
                 "game.js kinetic.js maps.js pickups.svg sprites.svg style.css themes.js ui-sprites.svg"),
 }

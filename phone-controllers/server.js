@@ -19,7 +19,12 @@ const port = Number(args.port ?? (args.internet ? 0 : process.env.PORT ?? 3000))
 const publicUrl = args['public-url'] ?? process.env.PUBLIC_URL;
 const qrModule = `export const maxPhoneConnections = ${maxPhoneConnections};\n`
   + await readFile(new URL(import.meta.resolve('uqr')), 'utf8');
+const bedrockPhone=await readFile(new URL('../Bedrock/phone-controller.js', import.meta.url));
 const server = createServer((request, response) => {
+  if(request.method==='GET' && request.url==='/Bedrock/phone-controller.js') {
+    response.writeHead(200, {'Content-Type':'text/javascript; charset=utf-8','Access-Control-Allow-Origin':'*'}).end(bedrockPhone);
+    return;
+  }
   if (request.method === 'GET' && request.url === '/phone/qr.js') {
     response.writeHead(200, {
       'Content-Type': 'text/javascript; charset=utf-8',
